@@ -17,6 +17,7 @@ function CommunityDetails() {
     contribution: "",
   });
 
+  const [joinStatus, setJoinStatus] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -30,8 +31,26 @@ function CommunityDetails() {
     }
   };
 
+  const fetchMyJoinStatus = async () => {
+    if (!token || isAdmin) return;
+
+    try {
+      const res = await API.get(`/join-requests/my-requests`);
+      const existing = res.data.find(
+        (item) => Number(item.community_id) === Number(id)
+      );
+
+      if (existing) {
+        setJoinStatus(existing);
+      }
+    } catch (error) {
+      console.log("Join status error:", error.response?.data);
+    }
+  };
+
   useEffect(() => {
     fetchCommunity();
+    fetchMyJoinStatus();
   }, [id]);
 
   const handleChange = (e) => {
@@ -61,6 +80,16 @@ function CommunityDetails() {
 
       setMessage(res.data.message || "Join request sent successfully");
 
+      setJoinStatus({
+        community_id: Number(id),
+        status: res.data.join_request?.status || "pending",
+        reason: form.reason,
+        contribution: form.contribution,
+        ai_score: res.data.join_request?.ai_score,
+        ai_decision: res.data.join_request?.ai_decision,
+        ai_summary: res.data.join_request?.ai_summary,
+      });
+
       setForm({
         reason: "",
         contribution: "",
@@ -75,6 +104,8 @@ function CommunityDetails() {
       } else {
         setError(detail || "Failed to send join request");
       }
+
+      fetchMyJoinStatus();
     }
   };
 
@@ -218,33 +249,74 @@ function CommunityDetails() {
           {message && <div className="success">{message}</div>}
           {error && <div className="error">{error}</div>}
 
-          <form onSubmit={sendJoinRequest}>
-            <div className="form-group">
-              <label>Why do you want to join?</label>
-              <textarea
-                name="reason"
-                placeholder="Explain why you want to join this community"
-                value={form.reason}
-                onChange={handleChange}
-                required
-              />
-            </div>
+          {joinStatus ? (
+            <div className="ai-box">
+              <h3>Join Request Already Sent</h3>
 
-            <div className="form-group">
-              <label>What can you contribute?</label>
-              <textarea
-                name="contribution"
-                placeholder="Explain what you can contribute"
-                value={form.contribution}
-                onChange={handleChange}
-                required
-              />
-            </div>
+              <div className="tags">
+                <span>Status: {joinStatus.status}</span>
+                <span>AI Score: {joinStatus.ai_score ?? "N/A"}</span>
+                <span>AI Decision: {joinStatus.ai_decision || "N/A"}</span>
+              </div>
 
-            <button className="primary-btn" type="submit">
-              Send Join Request
-            </button>
-          </form>
+              <p>
+                <strong>Your Reason:</strong> {joinStatus.reason}
+              </p>
+
+              <p>
+                <strong>Your Contribution:</strong> {joinStatus.contribution}
+              </p>
+
+              {joinStatus.ai_summary && (
+                <p>
+                  <strong>AI Review:</strong> {joinStatus.ai_summary}
+                </p>
+              )}
+
+              {joinStatus.status === "pending" && (
+                <p>
+                  Your request is waiting for admin approval. You cannot send
+                  another request for the same community.
+                </p>
+              )}
+
+              {joinStatus.status === "approved" && (
+                <p>You are approved for this community.</p>
+              )}
+
+              {joinStatus.status === "rejected" && (
+                <p>Your request was rejected by admin.</p>
+              )}
+            </div>
+          ) : (
+            <form onSubmit={sendJoinRequest}>
+              <div className="form-group">
+                <label>Why do you want to join?</label>
+                <textarea
+                  name="reason"
+                  placeholder="Explain why you want to join this community"
+                  value={form.reason}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>What can you contribute?</label>
+                <textarea
+                  name="contribution"
+                  placeholder="Explain what you can contribute"
+                  value={form.contribution}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+
+              <button className="primary-btn" type="submit">
+                Send Join Request
+              </button>
+            </form>
+          )}
         </div>
       )}
 
