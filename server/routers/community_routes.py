@@ -1,12 +1,44 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from database import get_db
-from models import Community, User
+from models import Community, User, JoinRequest, Meetup
 from schemas import CommunityCreate
-from auth import get_current_user, admin_required
+from auth import admin_required
 
 router = APIRouter(prefix="/api/communities", tags=["Communities"])
+
+
+def community_to_dict(db: Session, community: Community):
+    member_count = db.query(JoinRequest).filter(
+        JoinRequest.community_id == community.id,
+        JoinRequest.status == "approved"
+    ).count()
+
+    upcoming_meetup_count = db.query(Meetup).filter(
+        Meetup.community_id == community.id
+    ).count()
+
+    return {
+        "id": community.id,
+        "name": community.name,
+        "logo": community.logo,
+        "cover_image": community.cover_image,
+        "description": community.description,
+        "category": community.category,
+        "city": community.city,
+        "website": community.website,
+        "whatsapp_link": community.whatsapp_link,
+        "discord_link": community.discord_link,
+        "instagram_link": community.instagram_link,
+        "rules": community.rules,
+        "approval_type": community.approval_type,
+        "created_by": community.created_by,
+        "created_at": community.created_at,
+        "member_count": member_count,
+        "upcoming_meetup_count": upcoming_meetup_count
+    }
 
 
 @router.get("/")
@@ -14,6 +46,7 @@ def get_all_communities(
     search: str = "",
     category: str = "",
     city: str = "",
+    sort: str = "newest",
     db: Session = Depends(get_db)
 ):
     query = db.query(Community)
@@ -27,9 +60,18 @@ def get_all_communities(
     if city:
         query = query.filter(Community.city.ilike(f"%{city}%"))
 
-    communities = query.order_by(Community.id.desc()).all()
+    communities = query.all()
 
-    return communities
+    result = [community_to_dict(db, community) for community in communities]
+
+    if sort == "member_count":
+        result.sort(key=lambda item: item["member_count"], reverse=True)
+    elif sort == "meetup_count":
+        result.sort(key=lambda item: item["upcoming_meetup_count"], reverse=True)
+    else:
+        result.sort(key=lambda item: item["id"], reverse=True)
+
+    return result
 
 
 @router.get("/{community_id}")
@@ -39,7 +81,7 @@ def get_community(community_id: int, db: Session = Depends(get_db)):
     if not community:
         raise HTTPException(status_code=404, detail="Community not found")
 
-    return community
+    return community_to_dict(db, community)
 
 
 @router.post("/")
@@ -70,7 +112,7 @@ def create_community(
 
     return {
         "message": "Community created successfully",
-        "community": new_community
+        "community": community_to_dict(db, new_community)
     }
 
 
@@ -104,7 +146,7 @@ def update_community(
 
     return {
         "message": "Community updated successfully",
-        "community": db_community
+        "community": community_to_dict(db, db_community)
     }
 
 
@@ -122,4 +164,51 @@ def delete_community(
     db.delete(community)
     db.commit()
 
-    return {"message": "Community deleted successfully"}
+    return {
+        "message": "Community deleted successfully"
+    }
+
+
+@router.get("/{community_id}/analytics")
+def community_analytics(
+    community_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_required)
+):
+    community = db.query(Community).filter(Community.id == community_id).first()
+
+    if not community:
+        raise HTTPException(status_code=404, detail="Community not found")
+
+    total_requests = db.query(JoinRequest).filter(
+        JoinRequest.community_id == community_id
+    ).count()
+
+    approved_members = db.query(JoinRequest).filter(
+        JoinRequest.community_id == community_id,
+        JoinRequest.status == "approved"
+    ).count()
+
+    pending_requests = db.query(JoinRequest).filter(
+        JoinRequest.community_id == community_id,
+        JoinRequest.status == "pending"
+    ).count()
+
+    rejected_requests = db.query(JoinRequest).filter(
+        JoinRequest.community_id == community_id,
+        JoinRequest.status == "rejected"
+    ).count()
+
+    total_meetups = db.query(Meetup).filter(
+        Meetup.community_id == community_id
+    ).count()
+
+    return {
+        "community_id": community.id,
+        "community_name": community.name,
+        "total_requests": total_requests,
+        "approved_members": approved_members,
+        "pending_requests": pending_requests,
+        "rejected_requests": rejected_requests,
+        "total_meetups": total_meetups
+    }

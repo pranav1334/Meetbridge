@@ -1,5 +1,5 @@
-﻿import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+﻿import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import API from "../services/api";
 
 function MeetupDetails() {
@@ -11,6 +11,12 @@ function MeetupDetails() {
   const isAdmin = user?.role === "admin";
 
   const [meetup, setMeetup] = useState(null);
+  const [registeredMembers, setRegisteredMembers] = useState([]);
+  const [checkedInData, setCheckedInData] = useState({
+    count: 0,
+    checked_in_members: [],
+  });
+
   const [form, setForm] = useState({
     meetup_id: Number(id),
     reason: "",
@@ -21,18 +27,48 @@ function MeetupDetails() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const fetchMeetup = async () => {
+  const fetchMeetup = useCallback(async () => {
     try {
       const res = await API.get(`/meetups/${id}`);
       setMeetup(res.data);
-    } catch (error) {
+    } catch {
       setError("Meetup not found");
     }
-  };
+  }, [id]);
+
+  const fetchRegisteredMembers = useCallback(async () => {
+    try {
+      const res = await API.get(`/meetups/${id}/registered-members`);
+      setRegisteredMembers(res.data);
+    } catch {
+      setRegisteredMembers([]);
+    }
+  }, [id]);
+
+  const fetchCheckedInMembers = useCallback(async () => {
+    try {
+      const res = await API.get(`/meetups/${id}/checked-in-members`);
+      setCheckedInData(res.data);
+    } catch {
+      setCheckedInData({
+        count: 0,
+        checked_in_members: [],
+      });
+    }
+  }, [id]);
 
   useEffect(() => {
-    fetchMeetup();
-  }, [id]);
+    const loadMeetup = async () => {
+      await fetchMeetup();
+
+      if (token) {
+        await fetchRegisteredMembers();
+        await fetchCheckedInMembers();
+      }
+    };
+
+    loadMeetup();
+  }, [fetchMeetup, fetchRegisteredMembers, fetchCheckedInMembers, token]);
 
   const handleChange = (e) => {
     setForm({
@@ -43,6 +79,7 @@ function MeetupDetails() {
 
   const registerForMeetup = async (e) => {
     e.preventDefault();
+
     setMessage("");
     setError("");
 
@@ -53,7 +90,18 @@ function MeetupDetails() {
 
     try {
       const res = await API.post("/meetups/register", form);
+
       setMessage(res.data.message || "Registered successfully");
+
+      setForm({
+        meetup_id: Number(id),
+        reason: "",
+        want_to_learn: "",
+        contribution: "",
+      });
+
+      fetchMeetup();
+      fetchRegisteredMembers();
     } catch (error) {
       setError(error.response?.data?.detail || "Registration failed");
     }
@@ -63,11 +111,58 @@ function MeetupDetails() {
     setMessage("");
     setError("");
 
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+
     try {
       const res = await API.post(`/meetups/${id}/check-in`);
+
       setMessage(res.data.message || "Check-in successful");
+
+      fetchMeetup();
+      fetchRegisteredMembers();
+      fetchCheckedInMembers();
     } catch (error) {
       setError(error.response?.data?.detail || "Check-in failed");
+    }
+  };
+
+  const downloadCSV = async (type) => {
+    try {
+      setError("");
+      setMessage("");
+
+      const endpoint =
+        type === "attendees"
+          ? `/meetups/${id}/export/attendees`
+          : `/meetups/${id}/export/responses`;
+
+      const res = await API.get(endpoint, {
+        responseType: "blob",
+      });
+
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.setAttribute(
+        "download",
+        type === "attendees"
+          ? `meetup_${id}_attendees.csv`
+          : `meetup_${id}_responses.csv`
+      );
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.URL.revokeObjectURL(url);
+
+      setMessage("CSV downloaded successfully");
+    } catch {
+      setError("CSV download failed. Please login as admin and try again.");
     }
   };
 
@@ -101,6 +196,9 @@ function MeetupDetails() {
           </span>
           <span>{meetup.venue_name}</span>
           <span>Capacity: {meetup.capacity_limit}</span>
+          <span>{meetup.registration_count || 0} Registered</span>
+          <span>{meetup.checkin_count || 0} Checked In</span>
+          <span>{meetup.attendance_percentage || 0}% Attendance</span>
         </div>
 
         {meetup.google_maps_link && (
@@ -172,13 +270,136 @@ function MeetupDetails() {
 
       {isAdmin && (
         <div className="panel" style={{ marginTop: "24px" }}>
-          <h2>Admin View</h2>
+          <h2>Admin Meetup Controls</h2>
           <p>
-            You are viewing this meetup as an admin. Registration and check-in
-            options are hidden because admins manage meetups.
+            Admin can view registrations, checked-in attendees, analytics, and
+            export CSV reports.
           </p>
+
+          {message && <div className="success">{message}</div>}
+          {error && <div className="error">{error}</div>}
+
+          <div className="admin-actions">
+            <Link to={`/admin/meetup-analytics/${id}`} className="primary-btn">
+              View Analytics
+            </Link>
+
+            <button
+              className="secondary-btn"
+              type="button"
+              onClick={() => downloadCSV("attendees")}
+            >
+              Export Attendees CSV
+            </button>
+
+            <button
+              className="secondary-btn"
+              type="button"
+              onClick={() => downloadCSV("responses")}
+            >
+              Export Responses CSV
+            </button>
+          </div>
         </div>
       )}
+
+      <div className="panel" style={{ marginTop: "24px" }}>
+        <h2>Registered Members</h2>
+        <p>People who registered for this meetup.</p>
+
+        {registeredMembers.length === 0 ? (
+          <p>No registered members visible yet.</p>
+        ) : (
+          <div className="grid">
+            {registeredMembers.map((member) => (
+              <div className="card" key={member.registration_id}>
+                <h3>{member.full_name}</h3>
+
+                <div className="tags">
+                  {member.profession && <span>{member.profession}</span>}
+                  {member.city && <span>{member.city}</span>}
+                  <span>{member.status}</span>
+                </div>
+
+                <p>
+                  <strong>Company / College:</strong>{" "}
+                  {member.company_college || "Not added"}
+                </p>
+
+                <p>
+                  <strong>Looking For:</strong>{" "}
+                  {member.looking_for || "Not added"}
+                </p>
+
+                <div className="admin-actions">
+                  <Link
+                    to={`/members/${member.user_id}`}
+                    className="primary-btn"
+                  >
+                    Open Profile
+                  </Link>
+
+                  <Link
+                    to={`/messages?user=${member.user_id}`}
+                    className="secondary-btn"
+                  >
+                    Message
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="panel" style={{ marginTop: "24px" }}>
+        <h2>Live Checked-in Members</h2>
+        <p>{checkedInData.count} people currently checked in.</p>
+
+        {checkedInData.checked_in_members.length === 0 ? (
+          <p>No checked-in members visible yet.</p>
+        ) : (
+          <div className="grid">
+            {checkedInData.checked_in_members.map((member) => (
+              <div className="card" key={member.attendance_id}>
+                <h3>{member.full_name}</h3>
+
+                <div className="tags">
+                  {member.profession && <span>{member.profession}</span>}
+                  {member.city && <span>{member.city}</span>}
+                  <span>Checked In</span>
+                </div>
+
+                <p>
+                  <strong>Company / College:</strong>{" "}
+                  {member.company_college || "Not added"}
+                </p>
+
+                <p>
+                  <strong>Can Help With:</strong>{" "}
+                  {member.can_help_with || "Not added"}
+                </p>
+
+                <div className="admin-actions">
+                  <Link
+                    to={`/members/${member.user_id}`}
+                    className="primary-btn"
+                  >
+                    Open Profile
+                  </Link>
+
+                  <Link
+                    to={`/messages?user=${member.user_id}`}
+                    className="secondary-btn"
+                  >
+                    Message
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -6,150 +6,146 @@ function JoinRequests() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const fetchRequests = async () => {
+  const fetchJoinRequests = async () => {
     try {
-      const res = await API.get("/join-requests/admin/all");
+      setError("");
+      setMessage("");
+
+      const res = await API.get("/join-requests/");
       setRequests(res.data);
     } catch (error) {
-      setError(error.response?.data?.detail || "Failed to load requests");
+      console.log("Join requests fetch error:", error.response?.data);
+      setError(error.response?.data?.detail || "Failed to load join requests");
     }
   };
 
   useEffect(() => {
-    fetchRequests();
+    fetchJoinRequests();
   }, []);
 
-  const approveRequest = async (id) => {
+  const approveRequest = async (requestId) => {
     try {
-      setMessage("");
       setError("");
+      setMessage("");
 
-      await API.put(`/join-requests/${id}/approve`);
+      const res = await API.patch(`/join-requests/${requestId}/approve`);
 
-      setMessage("Join request approved");
-      fetchRequests();
+      setMessage(res.data.message || "Join request approved");
+      fetchJoinRequests();
     } catch (error) {
-      setError(error.response?.data?.detail || "Approve failed");
+      console.log("Approve error:", error.response?.data);
+      setError(error.response?.data?.detail || "Failed to approve request");
     }
   };
 
-  const rejectRequest = async (id) => {
+  const rejectRequest = async (requestId) => {
     try {
-      setMessage("");
       setError("");
+      setMessage("");
 
-      await API.put(`/join-requests/${id}/reject`);
+      const res = await API.patch(`/join-requests/${requestId}/reject`);
 
-      setMessage("Join request rejected");
-      fetchRequests();
+      setMessage(res.data.message || "Join request rejected");
+      fetchJoinRequests();
     } catch (error) {
-      setError(error.response?.data?.detail || "Reject failed");
+      console.log("Reject error:", error.response?.data);
+      setError(error.response?.data?.detail || "Failed to reject request");
     }
   };
 
-  const runAIReview = async (id) => {
+  const deleteRequest = async (requestId) => {
+    const confirmDelete = window.confirm(
+      "Are you sure you want to delete this join request?"
+    );
+
+    if (!confirmDelete) return;
+
     try {
-      setMessage("");
       setError("");
+      setMessage("");
 
-      await API.post(`/ai/review-join-request/${id}`);
+      const res = await API.delete(`/join-requests/${requestId}`);
 
-      setMessage("AI review completed");
-      fetchRequests();
+      setMessage(res.data.message || "Join request deleted");
+      fetchJoinRequests();
     } catch (error) {
-      setError(error.response?.data?.detail || "AI review failed");
+      console.log("Delete error:", error.response?.data);
+      setError(error.response?.data?.detail || "Failed to delete request");
     }
   };
 
-  const pendingRequests = requests.filter((req) => req.status === "pending");
-  const completedRequests = requests.filter((req) => req.status !== "pending");
+  const pendingRequests = requests.filter((item) => item.status === "pending");
 
-  const renderRequestCard = (req) => {
-    const isPending = req.status === "pending";
-    const isApproved = req.status === "approved";
-    const isRejected = req.status === "rejected";
+  const completedRequests = requests.filter(
+    (item) => item.status === "approved" || item.status === "rejected"
+  );
 
-    return (
-      <div className="panel request-card" key={req.id}>
-        <h3>Request #{req.id}</h3>
+  const RequestCard = ({ item }) => (
+    <div className="card">
+      <div className="tags">
+        <span>ID: {item.id}</span>
+        <span>{item.status}</span>
+        <span>Score: {item.ai_score ?? "N/A"}</span>
+        <span>AI: {item.ai_decision || "N/A"}</span>
+        <span>Spam: {item.ai_spam_risk || "N/A"}</span>
+      </div>
 
-        <div className="tags">
-          <span>Status: {req.status}</span>
-          <span>User ID: {req.user_id}</span>
-          <span>Community ID: {req.community_id}</span>
-        </div>
+      <h3>{item.user_name}</h3>
 
-        <p>
-          <strong>Reason:</strong> {req.reason}
-        </p>
+      <p>
+        <strong>Email:</strong> {item.user_email}
+      </p>
 
-        <p>
-          <strong>Contribution:</strong> {req.contribution}
-        </p>
+      <p>
+        <strong>Community:</strong> {item.community_name}
+      </p>
 
+      <p>
+        <strong>Why wants to join:</strong> {item.reason}
+      </p>
+
+      <p>
+        <strong>Contribution:</strong> {item.contribution}
+      </p>
+
+      {item.ai_summary && (
         <div className="ai-box">
-          <h3>AI Review</h3>
-
-          <p>
-            <strong>Score:</strong>{" "}
-            {req.ai_score !== null && req.ai_score !== undefined
-              ? `${req.ai_score}/100`
-              : "Not reviewed"}
-          </p>
-
-          <p>
-            <strong>Decision:</strong> {req.ai_decision || "Not available"}
-          </p>
-
-          <p>
-            <strong>Spam Risk:</strong> {req.ai_spam_risk || "Not available"}
-          </p>
-
-          <p>{req.ai_reason_summary || "No AI summary yet."}</p>
+          <h4>AI Review</h4>
+          <p>{item.ai_summary}</p>
         </div>
+      )}
 
-        {isPending && (
-          <div className="admin-actions">
+      <div className="admin-actions">
+        {item.status === "pending" && (
+          <>
             <button
-              className="secondary-btn"
               type="button"
-              onClick={() => runAIReview(req.id)}
-            >
-              Run AI Review
-            </button>
-
-            <button
               className="primary-btn"
-              type="button"
-              onClick={() => approveRequest(req.id)}
+              onClick={() => approveRequest(item.id)}
             >
               Approve
             </button>
 
             <button
-              className="secondary-btn"
               type="button"
-              onClick={() => rejectRequest(req.id)}
+              className="secondary-btn"
+              onClick={() => rejectRequest(item.id)}
             >
               Reject
             </button>
-          </div>
+          </>
         )}
 
-        {isApproved && (
-          <div className="success">
-            This join request has already been approved.
-          </div>
-        )}
-
-        {isRejected && (
-          <div className="error">
-            This join request has already been rejected.
-          </div>
-        )}
+        <button
+          type="button"
+          className="secondary-btn"
+          onClick={() => deleteRequest(item.id)}
+        >
+          Delete
+        </button>
       </div>
-    );
-  };
+    </div>
+  );
 
   return (
     <div className="page">
@@ -170,10 +166,14 @@ function JoinRequests() {
           <p>All join requests are already approved or rejected.</p>
         </div>
       ) : (
-        pendingRequests.map((req) => renderRequestCard(req))
+        <div className="grid">
+          {pendingRequests.map((item) => (
+            <RequestCard key={item.id} item={item} />
+          ))}
+        </div>
       )}
 
-      <h2 style={{ marginTop: "36px" }}>Approved / Rejected Requests</h2>
+      <h2 style={{ marginTop: "34px" }}>Approved / Rejected Requests</h2>
 
       {completedRequests.length === 0 ? (
         <div className="panel">
@@ -181,7 +181,11 @@ function JoinRequests() {
           <p>Approved and rejected requests will appear here.</p>
         </div>
       ) : (
-        completedRequests.map((req) => renderRequestCard(req))
+        <div className="grid">
+          {completedRequests.map((item) => (
+            <RequestCard key={item.id} item={item} />
+          ))}
+        </div>
       )}
     </div>
   );

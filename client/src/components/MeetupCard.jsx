@@ -3,6 +3,14 @@ import { Link } from "react-router-dom";
 function MeetupCard({ meetup }) {
   return (
     <div className="card">
+      {meetup.banner && (
+        <img
+          src={meetup.banner}
+          alt={meetup.title}
+          className="card-cover-image"
+        />
+      )}
+
       <div className="meetup-date">
         <strong>{meetup.date}</strong>
         <span>
@@ -16,6 +24,8 @@ function MeetupCard({ meetup }) {
       <div className="tags">
         <span>{meetup.venue_name}</span>
         <span>Capacity: {meetup.capacity_limit}</span>
+        <span>{meetup.registration_count || 0} Registered</span>
+        <span>{meetup.checkin_count || 0} Checked In</span>
       </div>
 
       <Link to={`/meetups/${meetup.id}`} className="primary-btn">
@@ -25,4 +35,4 @@ function MeetupCard({ meetup }) {
   );
 }
 
-export default MeetupCard;  
+export default MeetupCard;

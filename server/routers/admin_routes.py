@@ -15,29 +15,35 @@ def admin_dashboard(
 ):
     total_users = db.query(User).count()
     total_communities = db.query(Community).count()
+
     total_join_requests = db.query(JoinRequest).count()
-    pending_requests = db.query(JoinRequest).filter(JoinRequest.status == "pending").count()
-    approved_requests = db.query(JoinRequest).filter(JoinRequest.status == "approved").count()
+
+    pending_requests = db.query(JoinRequest).filter(
+        JoinRequest.status == "pending"
+    ).count()
+
+    approved_requests = db.query(JoinRequest).filter(
+        JoinRequest.status == "approved"
+    ).count()
+
+    rejected_requests = db.query(JoinRequest).filter(
+        JoinRequest.status == "rejected"
+    ).count()
+
     total_meetups = db.query(Meetup).count()
     total_registrations = db.query(MeetupRegistration).count()
     total_checkins = db.query(Attendance).count()
 
     return {
+        "admin_name": current_user.full_name,
+        "admin_email": current_user.email,
         "total_users": total_users,
         "total_communities": total_communities,
         "total_join_requests": total_join_requests,
         "pending_requests": pending_requests,
         "approved_requests": approved_requests,
+        "rejected_requests": rejected_requests,
         "total_meetups": total_meetups,
         "total_registrations": total_registrations,
         "total_checkins": total_checkins
     }
-
-
-@router.get("/members")
-def get_all_members(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(admin_required)
-):
-    members = db.query(User).order_by(User.id.desc()).all()
-    return members

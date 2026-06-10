@@ -14,21 +14,33 @@ function Register() {
     company_college: "",
     city: "",
     bio: "",
-    linkedin_url: "",
     looking_for: "",
     can_help_with: "",
   });
 
-  const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const saveLogin = (data) => {
-    localStorage.setItem("meetbridge_token", data.token);
-    localStorage.setItem("meetbridge_user", JSON.stringify(data.user));
+  const saveLoginAndRedirect = (data) => {
+    const token = data.token;
+    const user = data.user;
+
+    if (!token) {
+      setMessage("Login token missing from backend response");
+      return;
+    }
+
+    if (!user) {
+      setMessage("User data missing from backend response");
+      return;
+    }
+
+    localStorage.setItem("meetbridge_token", token);
+    localStorage.setItem("meetbridge_user", JSON.stringify(user));
 
     window.dispatchEvent(new Event("authChanged"));
 
-    if (data.user.role === "admin") {
+    if (user.role === "admin") {
       navigate("/admin");
     } else {
       navigate("/dashboard");
@@ -44,56 +56,70 @@ function Register() {
 
   const registerUser = async (e) => {
     e.preventDefault();
-    setMessage("");
 
     try {
-      const res = await API.post("/auth/register", form);
-      saveLogin(res.data);
+      setLoading(true);
+      setMessage("");
+
+      const res = await API.post("/auth/register", {
+        ...form,
+        email: form.email.trim().toLowerCase(),
+      });
+
+      saveLoginAndRedirect(res.data);
     } catch (error) {
-      setMessage(error.response?.data?.detail || "Registration failed");
+      console.log("REGISTER ERROR:", error.response?.data);
+
+      const detail = error.response?.data?.detail;
+
+      if (Array.isArray(detail)) {
+        setMessage(detail.map((item) => item.msg).join(", "));
+      } else {
+        setMessage(detail || "Registration failed");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleGoogleSuccess = async (credentialResponse) => {
+  const googleRegister = async (credentialResponse) => {
     try {
+      setLoading(true);
       setMessage("");
 
       const res = await API.post("/auth/google", {
-        credential: credentialResponse.credential,
+        token: credentialResponse.credential,
       });
 
-      saveLogin(res.data);
+      saveLoginAndRedirect(res.data);
     } catch (error) {
-      setMessage(error.response?.data?.detail || "Google signup failed");
+      console.log("GOOGLE REGISTER ERROR:", error.response?.data);
+      setMessage(error.response?.data?.detail || "Google registration failed");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="auth-page">
-      <form className="auth-box large" onSubmit={registerUser}>
-        <h2>Create Account</h2>
+      <form className="auth-box" onSubmit={registerUser}>
+        <h1>Create Account</h1>
         <p>Join communities and start networking.</p>
 
         {message && <div className="error">{message}</div>}
 
-        <div className="google-login-wrapper">
-          <GoogleLogin
-            onSuccess={handleGoogleSuccess}
-            onError={() => setMessage("Google signup failed")}
-            theme="outline"
-            size="large"
-            width="100%"
-          />
-        </div>
+        <GoogleLogin
+          onSuccess={googleRegister}
+          onError={() => setMessage("Google registration failed")}
+        />
 
-        <div className="divider">
-          <span>or create account with email</span>
-        </div>
+        <div className="divider">or create account with email</div>
 
         <div className="form-group">
           <label>Full Name</label>
           <input
             name="full_name"
+            type="text"
             placeholder="Enter your full name"
             value={form.full_name}
             onChange={handleChange}
@@ -102,11 +128,11 @@ function Register() {
         </div>
 
         <div className="form-group">
-          <label>Email Address</label>
+          <label>Email</label>
           <input
             name="email"
             type="email"
-            placeholder="Enter your email address"
+            placeholder="Enter your email"
             value={form.email}
             onChange={handleChange}
             required
@@ -115,32 +141,23 @@ function Register() {
 
         <div className="form-group">
           <label>Password</label>
-
-          <div className="password-box">
-            <input
-              name="password"
-              type={showPassword ? "text" : "password"}
-              placeholder="Create a password"
-              value={form.password}
-              onChange={handleChange}
-              required
-            />
-
-            <button
-              type="button"
-              className="show-password-btn"
-              onClick={() => setShowPassword(!showPassword)}
-            >
-              {showPassword ? "Hide" : "Show"}
-            </button>
-          </div>
+          <input
+            name="password"
+            type="password"
+            placeholder="Create password"
+            value={form.password}
+            onChange={handleChange}
+            required
+            minLength="6"
+          />
         </div>
 
         <div className="form-group">
           <label>Profession</label>
           <input
             name="profession"
-            placeholder="Example: Student Developer, Founder, Designer"
+            type="text"
+            placeholder="Student, Developer, Founder..."
             value={form.profession}
             onChange={handleChange}
           />
@@ -150,7 +167,8 @@ function Register() {
           <label>Company / College</label>
           <input
             name="company_college"
-            placeholder="Enter your company or college name"
+            type="text"
+            placeholder="Your college or company"
             value={form.company_college}
             onChange={handleChange}
           />
@@ -160,27 +178,18 @@ function Register() {
           <label>City</label>
           <input
             name="city"
-            placeholder="Example: Hyderabad"
+            type="text"
+            placeholder="Your city"
             value={form.city}
             onChange={handleChange}
           />
         </div>
 
         <div className="form-group">
-          <label>LinkedIn URL</label>
-          <input
-            name="linkedin_url"
-            placeholder="Paste your LinkedIn profile link"
-            value={form.linkedin_url}
-            onChange={handleChange}
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Short Bio</label>
+          <label>Bio</label>
           <textarea
             name="bio"
-            placeholder="Write a short introduction about yourself"
+            placeholder="Short bio about yourself"
             value={form.bio}
             onChange={handleChange}
           />
@@ -190,7 +199,7 @@ function Register() {
           <label>Looking For</label>
           <textarea
             name="looking_for"
-            placeholder="Example: internships, co-founder, mentors, clients"
+            placeholder="Example: co-founder, internship, team members, mentors"
             value={form.looking_for}
             onChange={handleChange}
           />
@@ -200,17 +209,17 @@ function Register() {
           <label>Can Help With</label>
           <textarea
             name="can_help_with"
-            placeholder="Example: React, Python, UI design, marketing"
+            placeholder="Example: React, AI, design, startup ideas"
             value={form.can_help_with}
             onChange={handleChange}
           />
         </div>
 
-        <button className="primary-btn" type="submit">
-          Register
+        <button className="primary-btn full" type="submit" disabled={loading}>
+          {loading ? "Creating Account..." : "Register"}
         </button>
 
-        <p>
+        <p className="auth-link">
           Already have an account? <Link to="/login">Login</Link>
         </p>
       </form>

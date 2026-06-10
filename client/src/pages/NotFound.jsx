@@ -4,10 +4,12 @@ function NotFound() {
   return (
     <div className="page">
       <div className="panel">
-        <h1 className="page-title">404</h1>
-        <p className="page-subtitle">Page not found.</p>
+        <h1 className="page-title">Page Not Found</h1>
+        <p className="page-subtitle">
+          The page you are looking for does not exist. Use navigation to continue.
+        </p>
         <Link to="/" className="primary-btn">
-          Go Home
+          Back to Home
         </Link>
       </div>
     </div>

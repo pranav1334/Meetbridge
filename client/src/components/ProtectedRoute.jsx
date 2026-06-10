@@ -3,7 +3,7 @@ import { Navigate } from "react-router-dom";
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem("meetbridge_token");
 
-  if (!token) {
+  if (!token || token === "undefined" || token === "null") {
     return <Navigate to="/login" replace />;
   }
 

@@ -1,131 +1,120 @@
 ﻿import { useEffect, useState } from "react";
-import API from "../services/api";
 import { Link } from "react-router-dom";
+import API from "../services/api";
 
 function Dashboard() {
-  const [user, setUser] = useState(null);
+  const user = JSON.parse(localStorage.getItem("meetbridge_user") || "null");
+
   const [requests, setRequests] = useState([]);
+  const [error, setError] = useState("");
 
-  const fetchData = async () => {
+  const fetchMyRequests = async () => {
     try {
-      const userRes = await API.get("/auth/me");
-      setUser(userRes.data);
-
-      const reqRes = await API.get("/join-requests/my");
-      setRequests(reqRes.data);
+      setError("");
+      const res = await API.get("/join-requests/my-requests");
+      setRequests(res.data);
     } catch (error) {
-      console.log(error);
+      console.log("My requests error:", error.response?.data);
+      setError(error.response?.data?.detail || "Failed to load join requests");
     }
   };
 
   useEffect(() => {
-    fetchData();
+    fetchMyRequests();
   }, []);
-
-  const isAdmin = user?.role === "admin";
 
   return (
     <div className="page">
-      <h1 className="page-title">
-        {isAdmin ? "Admin Dashboard" : "User Dashboard"}
-      </h1>
-
+      <h1 className="page-title">User Dashboard</h1>
       <p className="page-subtitle">
-        {isAdmin
-          ? "Manage communities, meetups, join requests, and AI tools."
-          : "View your profile, join requests, meetups, and AI tools."}
+        View your profile, join requests, meetups, and AI tools.
       </p>
 
-      {user && (
-        <div className="panel">
-          <h2>{user.full_name}</h2>
-          <p>{user.email}</p>
+      {error && <div className="error">{error}</div>}
 
-          <div className="tags">
-            <span>{user.role}</span>
-            {user.profession && <span>{user.profession}</span>}
-            {user.city && <span>{user.city}</span>}
+      <div className="panel">
+        <h2>My Profile</h2>
+
+        <div className="profile-grid">
+          <div className="ai-box">
+            <h3>Name</h3>
+            <p>{user?.full_name || "Not available"}</p>
           </div>
 
-          <p>{user.bio}</p>
+          <div className="ai-box">
+            <h3>Email</h3>
+            <p>{user?.email || "Not available"}</p>
+          </div>
 
-          <div className="admin-actions">
-            {isAdmin ? (
-              <>
-                <Link to="/admin" className="primary-btn">
-                  Open Admin Panel
-                </Link>
+          <div className="ai-box">
+            <h3>Role</h3>
+            <p>{user?.role || "member"}</p>
+          </div>
 
-                <Link to="/admin/create-community" className="secondary-btn">
-                  Create Community
-                </Link>
-
-                <Link to="/admin/create-meetup" className="secondary-btn">
-                  Create Meetup
-                </Link>
-
-                <Link to="/admin/join-requests" className="secondary-btn">
-                  Join Requests
-                </Link>
-              </>
-            ) : (
-              <>
-                <Link to="/communities" className="primary-btn">
-                  Explore Communities
-                </Link>
-
-                <Link to="/meetups" className="secondary-btn">
-                  Explore Meetups
-                </Link>
-
-                <Link to="/ai-assistant" className="secondary-btn">
-                  Open AI Assistant
-                </Link>
-              </>
-            )}
+          <div className="ai-box">
+            <h3>Profession</h3>
+            <p>{user?.profession || "Not added"}</p>
           </div>
         </div>
-      )}
 
-      {!isAdmin && (
-        <div className="panel" style={{ marginTop: "24px" }}>
-          <h2>My Join Requests</h2>
+        <div className="admin-actions">
+          <Link to="/communities" className="primary-btn">
+            Explore Communities
+          </Link>
 
-          {requests.length === 0 ? (
-            <p>You have not sent any join request yet.</p>
-          ) : (
-            <div className="grid">
-              {requests.map((req) => (
-                <div className="card" key={req.id}>
-                  <h3>Community ID: {req.community_id}</h3>
+          <Link to="/meetups" className="secondary-btn">
+            Explore Meetups
+          </Link>
 
-                  <p>
-                    <strong>Status:</strong> {req.status}
-                  </p>
+          <Link to="/ai-assistant" className="secondary-btn">
+            Open AI Assistant
+          </Link>
+        </div>
+      </div>
 
-                  <p>
-                    <strong>Reason:</strong> {req.reason}
-                  </p>
+      <div className="panel" style={{ marginTop: "24px" }}>
+        <h2>My Join Requests</h2>
 
-                  <p>
-                    <strong>Contribution:</strong> {req.contribution}
-                  </p>
-
-                  {req.ai_score !== null && req.ai_score !== undefined && (
-                    <div className="ai-box">
-                      <h4>AI Review</h4>
-                      <p>Score: {req.ai_score}/100</p>
-                      <p>Decision: {req.ai_decision}</p>
-                      <p>Spam Risk: {req.ai_spam_risk}</p>
-                      <p>{req.ai_reason_summary}</p>
-                    </div>
-                  )}
+        {requests.length === 0 ? (
+          <p>You have not sent any join request yet.</p>
+        ) : (
+          <div className="grid">
+            {requests.map((item) => (
+              <div className="card" key={item.id}>
+                <div className="tags">
+                  <span>{item.status}</span>
+                  <span>Score: {item.ai_score ?? "N/A"}</span>
+                  <span>AI: {item.ai_decision || "N/A"}</span>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+
+                <h3>{item.community_name}</h3>
+
+                <p>
+                  <strong>Reason:</strong> {item.reason}
+                </p>
+
+                <p>
+                  <strong>Contribution:</strong> {item.contribution}
+                </p>
+
+                {item.ai_summary && (
+                  <div className="ai-box">
+                    <h4>AI Review</h4>
+                    <p>{item.ai_summary}</p>
+                  </div>
+                )}
+
+                <Link
+                  to={`/communities/${item.community_id}`}
+                  className="primary-btn"
+                >
+                  Open Community
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

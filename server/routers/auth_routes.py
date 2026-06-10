@@ -1,24 +1,128 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-import os
-from dotenv import load_dotenv
-
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
+import os
+import re
+import bleach
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from database import get_db
 from models import User
-from schemas import RegisterUser, LoginUser, GoogleLoginRequest
-from auth import hash_password, verify_password, create_access_token, get_current_user
-
-load_dotenv()
+from auth import hash_password, verify_password, create_access_token
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+limiter = Limiter(key_func=get_remote_address)
 
 
-def get_default_role(email: str):
+def clean_text(value):
+    if value is None:
+        return None
+
+    cleaned = bleach.clean(
+        str(value).strip(),
+        tags=[],
+        attributes={},
+        strip=True
+    )
+
+    return cleaned
+
+
+def validate_email(email: str):
+    if not email:
+        raise HTTPException(
+            status_code=400,
+            detail="Email is required"
+        )
+
+    email = email.strip().lower()
+
+    pattern = r"^[^\s@]+@[^\s@]+\.[^\s@]+$"
+
+    if not re.match(pattern, email):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid email address"
+        )
+
+    return email
+
+
+def validate_password(password: str):
+    if not password:
+        raise HTTPException(
+            status_code=400,
+            detail="Password is required"
+        )
+
+    if len(password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 6 characters"
+        )
+
+    if len(password) > 72:
+        raise HTTPException(
+            status_code=400,
+            detail="Password is too long"
+        )
+
+
+def user_to_dict(user: User):
+    return {
+        "id": user.id,
+        "full_name": user.full_name,
+        "email": user.email,
+        "role": user.role,
+        "profile_picture": user.profile_picture,
+        "profession": user.profession,
+        "company_college": user.company_college,
+        "city": user.city,
+        "bio": user.bio,
+        "linkedin_url": user.linkedin_url,
+        "instagram_url": user.instagram_url,
+        "website_url": user.website_url,
+        "looking_for": user.looking_for,
+        "can_help_with": user.can_help_with,
+        "auth_provider": user.auth_provider,
+    }
+
+
+@router.post("/register")
+@limiter.limit("5/minute")
+def register_user(
+    request: Request,
+    data: dict,
+    db: Session = Depends(get_db)
+):
+    full_name = clean_text(data.get("full_name"))
+    email = data.get("email")
+    password = data.get("password")
+
+    if not full_name or not email or not password:
+        raise HTTPException(
+            status_code=400,
+            detail="Full name, email, and password are required"
+        )
+
+    email = validate_email(email)
+    validate_password(password)
+
+    existing_user = db.query(User).filter(
+        User.email == email
+    ).first()
+
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Email already registered"
+        )
+
     admin_emails = os.getenv("ADMIN_EMAILS", "")
 
     admin_email_list = [
@@ -27,54 +131,20 @@ def get_default_role(email: str):
         if item.strip()
     ]
 
-    if email.strip().lower() in admin_email_list:
-        return "admin"
-
-    return "member"
-
-
-def make_user_response(user: User):
-    token = create_access_token({
-        "user_id": user.id,
-        "email": user.email,
-        "role": user.role
-    })
-
-    return {
-        "message": "Login successful",
-        "token": token,
-        "user": {
-            "id": user.id,
-            "full_name": user.full_name,
-            "email": user.email,
-            "role": user.role
-        }
-    }
-
-
-@router.post("/register")
-def register_user(user: RegisterUser, db: Session = Depends(get_db)):
-    user_email = user.email.strip().lower()
-
-    existing_user = db.query(User).filter(User.email == user_email).first()
-
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-
-    user_role = get_default_role(user_email)
+    role = "admin" if email in admin_email_list else "member"
 
     new_user = User(
-        full_name=user.full_name,
-        email=user_email,
-        password=hash_password(user.password),
-        role=user_role,
-        profession=user.profession,
-        company_college=user.company_college,
-        city=user.city,
-        bio=user.bio,
-        linkedin_url=user.linkedin_url,
-        looking_for=user.looking_for,
-        can_help_with=user.can_help_with
+        full_name=full_name,
+        email=email,
+        password=hash_password(password),
+        role=role,
+        profession=clean_text(data.get("profession")),
+        company_college=clean_text(data.get("company_college")),
+        city=clean_text(data.get("city")),
+        bio=clean_text(data.get("bio")),
+        looking_for=clean_text(data.get("looking_for")),
+        can_help_with=clean_text(data.get("can_help_with")),
+        auth_provider="local"
     )
 
     db.add(new_user)
@@ -82,134 +152,190 @@ def register_user(user: RegisterUser, db: Session = Depends(get_db)):
     db.refresh(new_user)
 
     token = create_access_token({
-        "user_id": new_user.id,
-        "email": new_user.email,
-        "role": new_user.role
+        "sub": new_user.email
     })
 
     return {
         "message": "Registration successful",
         "token": token,
-        "user": {
-            "id": new_user.id,
-            "full_name": new_user.full_name,
-            "email": new_user.email,
-            "role": new_user.role
-        }
+        "user": user_to_dict(new_user)
     }
 
 
 @router.post("/login")
-def login_user(user: LoginUser, db: Session = Depends(get_db)):
-    user_email = user.email.strip().lower()
+@limiter.limit("10/minute")
+def login_user(
+    request: Request,
+    data: dict,
+    db: Session = Depends(get_db)
+):
+    email = data.get("email")
+    password = data.get("password")
 
-    db_user = db.query(User).filter(User.email == user_email).first()
+    if not email or not password:
+        raise HTTPException(
+            status_code=400,
+            detail="Email and password are required"
+        )
 
-    if not db_user:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+    email = validate_email(email)
 
-    if not verify_password(user.password, db_user.password):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+    user = db.query(User).filter(
+        User.email == email
+    ).first()
 
-    correct_role = get_default_role(db_user.email)
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password"
+        )
 
-    if db_user.role != correct_role:
-        db_user.role = correct_role
-        db.commit()
-        db.refresh(db_user)
+    if user.auth_provider == "google" and not user.password:
+        raise HTTPException(
+            status_code=401,
+            detail="This account uses Google login"
+        )
+
+    if not user.password:
+        raise HTTPException(
+            status_code=401,
+            detail="Password not set"
+        )
+
+    if not verify_password(password, user.password):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password"
+        )
 
     token = create_access_token({
-        "user_id": db_user.id,
-        "email": db_user.email,
-        "role": db_user.role
+        "sub": user.email
     })
 
     return {
         "message": "Login successful",
         "token": token,
-        "user": {
-            "id": db_user.id,
-            "full_name": db_user.full_name,
-            "email": db_user.email,
-            "role": db_user.role
-        }
+        "user": user_to_dict(user)
+    }
+
+
+@router.post("/login-form")
+@limiter.limit("10/minute")
+def login_form(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
+    email = validate_email(form_data.username)
+    password = form_data.password
+
+    user = db.query(User).filter(
+        User.email == email
+    ).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password"
+        )
+
+    if not user.password or not verify_password(password, user.password):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password"
+        )
+
+    token = create_access_token({
+        "sub": user.email
+    })
+
+    return {
+        "access_token": token,
+        "token_type": "bearer"
     }
 
 
 @router.post("/google")
-def google_login(data: GoogleLoginRequest, db: Session = Depends(get_db)):
-    if not GOOGLE_CLIENT_ID:
+@limiter.limit("10/minute")
+def google_login(
+    request: Request,
+    data: dict,
+    db: Session = Depends(get_db)
+):
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID")
+
+    if not google_client_id:
         raise HTTPException(
             status_code=500,
-            detail="GOOGLE_CLIENT_ID not found in .env file"
+            detail="Google Client ID is not configured in backend"
+        )
+
+    credential_token = data.get("token")
+
+    if not credential_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Google token is required"
         )
 
     try:
-        google_user = id_token.verify_oauth2_token(
-            data.credential,
+        idinfo = id_token.verify_oauth2_token(
+            credential_token,
             google_requests.Request(),
-            GOOGLE_CLIENT_ID
+            google_client_id
         )
+
+        email = validate_email(idinfo.get("email", ""))
+
+        full_name = clean_text(
+            idinfo.get("name", "Google User")
+        )
+
+        profile_picture = idinfo.get("picture")
+
+        user = db.query(User).filter(
+            User.email == email
+        ).first()
+
+        admin_emails = os.getenv("ADMIN_EMAILS", "")
+
+        admin_email_list = [
+            item.strip().lower()
+            for item in admin_emails.split(",")
+            if item.strip()
+        ]
+
+        role = "admin" if email in admin_email_list else "member"
+
+        if not user:
+            user = User(
+                full_name=full_name,
+                email=email,
+                password=None,
+                role=role,
+                profile_picture=profile_picture,
+                auth_provider="google"
+            )
+
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+
+        token = create_access_token({
+            "sub": user.email
+        })
+
+        return {
+            "message": "Google login successful",
+            "token": token,
+            "user": user_to_dict(user)
+        }
+
+    except HTTPException:
+        raise
+
     except Exception:
-        raise HTTPException(status_code=401, detail="Invalid Google token")
-
-    email = google_user.get("email", "").strip().lower()
-    full_name = google_user.get("name", "")
-    picture = google_user.get("picture", "")
-
-    if not email:
-        raise HTTPException(status_code=400, detail="Google account email not found")
-
-    db_user = db.query(User).filter(User.email == email).first()
-
-    correct_role = get_default_role(email)
-
-    if db_user:
-        db_user.role = correct_role
-
-        if picture and not db_user.profile_picture:
-            db_user.profile_picture = picture
-
-        db.commit()
-        db.refresh(db_user)
-
-        return make_user_response(db_user)
-
-    new_user = User(
-        full_name=full_name or email.split("@")[0],
-        email=email,
-        password=hash_password("google_login_user_no_password"),
-        role=correct_role,
-        profile_picture=picture,
-        profession=None,
-        company_college=None,
-        city=None,
-        bio="",
-        linkedin_url=None,
-        looking_for="",
-        can_help_with=""
-    )
-
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-
-    return make_user_response(new_user)
-
-
-@router.get("/me")
-def get_me(current_user: User = Depends(get_current_user)):
-    return {
-        "id": current_user.id,
-        "full_name": current_user.full_name,
-        "email": current_user.email,
-        "role": current_user.role,
-        "profile_picture": current_user.profile_picture,
-        "profession": current_user.profession,
-        "company_college": current_user.company_college,
-        "city": current_user.city,
-        "bio": current_user.bio,
-        "linkedin_url": current_user.linkedin_url,
-        "looking_for": current_user.looking_for,
-        "can_help_with": current_user.can_help_with
-    }
+        raise HTTPException(
+            status_code=401,
+            detail="Google login failed"
+        )

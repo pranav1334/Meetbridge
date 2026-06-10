@@ -13,18 +13,32 @@ function Login() {
 
   const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const saveLogin = (data) => {
-    localStorage.setItem("meetbridge_token", data.token);
-    localStorage.setItem("meetbridge_user", JSON.stringify(data.user));
+  const saveLoginAndRedirect = (data) => {
+    const token = data.token;
+    const user = data.user;
 
-    if (data.user.role === "admin") {
+    if (!token) {
+      setMessage("Login token missing from backend response");
+      return;
+    }
+
+    if (!user) {
+      setMessage("User data missing from backend response");
+      return;
+    }
+
+    localStorage.setItem("meetbridge_token", token);
+    localStorage.setItem("meetbridge_user", JSON.stringify(user));
+
+    window.dispatchEvent(new Event("authChanged"));
+
+    if (user.role === "admin") {
       navigate("/admin");
     } else {
       navigate("/dashboard");
     }
-
-    window.location.reload();
   };
 
   const handleChange = (e) => {
@@ -38,48 +52,55 @@ function Login() {
     e.preventDefault();
 
     try {
-      const res = await API.post("/auth/login", form);
-      saveLogin(res.data);
+      setLoading(true);
+      setMessage("");
+
+      const res = await API.post("/auth/login", {
+        email: form.email.trim().toLowerCase(),
+        password: form.password,
+      });
+
+      saveLoginAndRedirect(res.data);
     } catch (error) {
+      console.log("LOGIN ERROR:", error.response?.data);
       setMessage(error.response?.data?.detail || "Login failed");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleGoogleSuccess = async (credentialResponse) => {
+  const googleLogin = async (credentialResponse) => {
     try {
+      setLoading(true);
       setMessage("");
 
       const res = await API.post("/auth/google", {
-        credential: credentialResponse.credential,
+        token: credentialResponse.credential,
       });
 
-      saveLogin(res.data);
+      saveLoginAndRedirect(res.data);
     } catch (error) {
+      console.log("GOOGLE LOGIN ERROR:", error.response?.data);
       setMessage(error.response?.data?.detail || "Google login failed");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="auth-page">
       <form className="auth-box" onSubmit={loginUser}>
-        <h2>Login</h2>
+        <h1>Login</h1>
         <p>Welcome back to MeetBridge.</p>
 
         {message && <div className="error">{message}</div>}
 
-        <div className="google-login-wrapper">
-          <GoogleLogin
-            onSuccess={handleGoogleSuccess}
-            onError={() => setMessage("Google login failed")}
-            theme="outline"
-            size="large"
-            width="100%"
-          />
-        </div>
+        <GoogleLogin
+          onSuccess={googleLogin}
+          onError={() => setMessage("Google login failed")}
+        />
 
-        <div className="divider">
-          <span>or login with email</span>
-        </div>
+        <div className="divider">or login with email</div>
 
         <div className="form-group">
           <label>Email Address</label>
@@ -108,7 +129,6 @@ function Login() {
 
             <button
               type="button"
-              className="show-password-btn"
               onClick={() => setShowPassword(!showPassword)}
             >
               {showPassword ? "Hide" : "Show"}
@@ -116,11 +136,11 @@ function Login() {
           </div>
         </div>
 
-        <button className="primary-btn" type="submit">
-          Login
+        <button className="primary-btn full" type="submit" disabled={loading}>
+          {loading ? "Logging in..." : "Login"}
         </button>
 
-        <p>
+        <p className="auth-link">
           New user? <Link to="/register">Create account</Link>
         </p>
       </form>

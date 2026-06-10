@@ -2,98 +2,137 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import JoinRequest, Community, User
-from schemas import JoinRequestCreate
+from models import User, Community, JoinRequest
 from auth import get_current_user, admin_required
 
 router = APIRouter(prefix="/api/join-requests", tags=["Join Requests"])
 
 
-def simple_ai_review(user: User, community: Community, reason: str, contribution: str):
-    score = 0
+def simple_ai_review(reason: str, contribution: str):
+    reason_text = reason.lower()
+    contribution_text = contribution.lower()
 
-    profile_fields = [
-        user.full_name,
-        user.email,
-        user.profession,
-        user.company_college,
-        user.city,
-        user.bio,
-        user.linkedin_url
+    score = 0
+    spam_risk = "Low"
+
+    if len(reason.strip()) >= 20:
+        score += 30
+    elif len(reason.strip()) >= 10:
+        score += 15
+
+    if len(contribution.strip()) >= 20:
+        score += 30
+    elif len(contribution.strip()) >= 10:
+        score += 15
+
+    good_words = [
+        "learn",
+        "contribute",
+        "help",
+        "project",
+        "community",
+        "startup",
+        "developer",
+        "ai",
+        "design",
+        "network",
+        "collaborate",
+        "student",
+        "team",
+        "meetup",
+        "technology",
     ]
 
-    completed = sum(1 for field in profile_fields if field)
-    profile_score = int((completed / len(profile_fields)) * 20)
-    score += profile_score
+    for word in good_words:
+        if word in reason_text or word in contribution_text:
+            score += 3
 
-    relevance_score = 15
-    if user.profession and community.category:
-        if user.profession.lower() in community.category.lower() or community.category.lower() in user.profession.lower():
-            relevance_score = 25
-    score += relevance_score
+    spam_words = [
+        "money",
+        "crypto",
+        "betting",
+        "casino",
+        "free money",
+        "spam",
+        "promotion",
+        "scam",
+    ]
 
-    reason_score = 20 if len(reason.strip()) > 40 else 10
-    contribution_score = 20 if len(contribution.strip()) > 40 else 10
+    for word in spam_words:
+        if word in reason_text or word in contribution_text:
+            score -= 20
+            spam_risk = "High"
 
-    score += reason_score
-    score += contribution_score
+    if score < 0:
+        score = 0
 
-    spam_words = ["buy now", "click here", "free money", "promotion", "spam", "http://", "https://"]
-    spam_found = any(word in reason.lower() or word in contribution.lower() for word in spam_words)
+    if score > 100:
+        score = 100
 
-    if spam_found:
-        safety_score = 5
-        spam_risk = "High"
-    else:
-        safety_score = 15
-        spam_risk = "Low"
-
-    score += safety_score
-
-    if score >= 80:
+    if score >= 70 and spam_risk == "Low":
         decision = "Approve"
-    elif score >= 60:
+    elif score >= 45:
         decision = "Review"
-    elif score >= 40:
-        decision = "Ask more information"
     else:
-        decision = "Reject suggestion"
+        decision = "Reject"
 
-    summary = f"User profile completeness score is {profile_score}/20. Reason quality is {reason_score}/20. Contribution quality is {contribution_score}/20. Spam risk is {spam_risk}."
+    summary = (
+        f"AI reviewed the join request. Score is {score}/100. "
+        f"Decision suggestion: {decision}. Spam risk: {spam_risk}."
+    )
 
     return {
-        "score": min(score, 100),
+        "score": score,
         "decision": decision,
+        "summary": summary,
         "spam_risk": spam_risk,
-        "summary": summary
     }
 
 
 @router.post("/")
-def send_join_request(
-    request: JoinRequestCreate,
+def create_join_request(
+    data: dict,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    community = db.query(Community).filter(Community.id == request.community_id).first()
+    community_id = data.get("community_id")
+    reason = data.get("reason")
+    contribution = data.get("contribution")
+
+    if current_user.role == "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Admin cannot send join request. Use normal user account."
+        )
+
+    if not community_id:
+        raise HTTPException(status_code=400, detail="Community ID is required")
+
+    if not reason or not contribution:
+        raise HTTPException(
+            status_code=400,
+            detail="Reason and contribution are required"
+        )
+
+    community = db.query(Community).filter(
+        Community.id == int(community_id)
+    ).first()
 
     if not community:
         raise HTTPException(status_code=404, detail="Community not found")
 
     existing_request = db.query(JoinRequest).filter(
         JoinRequest.user_id == current_user.id,
-        JoinRequest.community_id == request.community_id
+        JoinRequest.community_id == int(community_id)
     ).first()
 
     if existing_request:
-        raise HTTPException(status_code=400, detail="You already sent a join request for this community")
+        raise HTTPException(
+            status_code=400,
+            detail=f"You already sent a join request. Current status: {existing_request.status}"
+        )
 
-    ai_result = simple_ai_review(
-        current_user,
-        community,
-        request.reason,
-        request.contribution
-    )
+    ai_result = simple_ai_review(reason, contribution)
 
     status = "pending"
 
@@ -102,14 +141,14 @@ def send_join_request(
 
     new_request = JoinRequest(
         user_id=current_user.id,
-        community_id=request.community_id,
-        reason=request.reason,
-        contribution=request.contribution,
+        community_id=int(community_id),
+        reason=reason,
+        contribution=contribution,
         status=status,
         ai_score=ai_result["score"],
         ai_decision=ai_result["decision"],
+        ai_summary=ai_result["summary"],
         ai_spam_risk=ai_result["spam_risk"],
-        ai_reason_summary=ai_result["summary"]
     )
 
     db.add(new_request)
@@ -117,13 +156,27 @@ def send_join_request(
     db.refresh(new_request)
 
     return {
-        "message": "Join request submitted successfully",
-        "join_request": new_request
+        "message": "Join request sent successfully"
+        if status == "pending"
+        else "You joined this community successfully",
+        "join_request": {
+            "id": new_request.id,
+            "user_id": new_request.user_id,
+            "community_id": new_request.community_id,
+            "reason": new_request.reason,
+            "contribution": new_request.contribution,
+            "status": new_request.status,
+            "ai_score": new_request.ai_score,
+            "ai_decision": new_request.ai_decision,
+            "ai_summary": new_request.ai_summary,
+            "ai_spam_risk": new_request.ai_spam_risk,
+            "created_at": new_request.created_at,
+        },
     }
 
 
-@router.get("/my")
-def my_join_requests(
+@router.get("/my-requests")
+def get_my_join_requests(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -131,25 +184,75 @@ def my_join_requests(
         JoinRequest.user_id == current_user.id
     ).order_by(JoinRequest.id.desc()).all()
 
-    return requests
+    result = []
+
+    for item in requests:
+        community = db.query(Community).filter(
+            Community.id == item.community_id
+        ).first()
+
+        result.append({
+            "id": item.id,
+            "community_id": item.community_id,
+            "community_name": community.name if community else "Unknown Community",
+            "reason": item.reason,
+            "contribution": item.contribution,
+            "status": item.status,
+            "ai_score": item.ai_score,
+            "ai_decision": item.ai_decision,
+            "ai_summary": item.ai_summary,
+            "ai_spam_risk": item.ai_spam_risk,
+            "created_at": item.created_at,
+        })
+
+    return result
 
 
-@router.get("/admin/all")
+@router.get("/")
 def get_all_join_requests(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_required)
 ):
     requests = db.query(JoinRequest).order_by(JoinRequest.id.desc()).all()
-    return requests
+
+    result = []
+
+    for item in requests:
+        user = db.query(User).filter(User.id == item.user_id).first()
+
+        community = db.query(Community).filter(
+            Community.id == item.community_id
+        ).first()
+
+        result.append({
+            "id": item.id,
+            "user_id": item.user_id,
+            "community_id": item.community_id,
+            "user_name": user.full_name if user else "Unknown User",
+            "user_email": user.email if user else "Unknown Email",
+            "community_name": community.name if community else "Unknown Community",
+            "reason": item.reason,
+            "contribution": item.contribution,
+            "status": item.status,
+            "ai_score": item.ai_score,
+            "ai_decision": item.ai_decision,
+            "ai_summary": item.ai_summary,
+            "ai_spam_risk": item.ai_spam_risk,
+            "created_at": item.created_at,
+        })
+
+    return result
 
 
-@router.put("/{request_id}/approve")
+@router.patch("/{request_id}/approve")
 def approve_join_request(
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_required)
 ):
-    join_request = db.query(JoinRequest).filter(JoinRequest.id == request_id).first()
+    join_request = db.query(JoinRequest).filter(
+        JoinRequest.id == request_id
+    ).first()
 
     if not join_request:
         raise HTTPException(status_code=404, detail="Join request not found")
@@ -160,18 +263,21 @@ def approve_join_request(
     db.refresh(join_request)
 
     return {
-        "message": "Join request approved",
-        "join_request": join_request
+        "message": "Join request approved successfully",
+        "join_request_id": join_request.id,
+        "status": join_request.status,
     }
 
 
-@router.put("/{request_id}/reject")
+@router.patch("/{request_id}/reject")
 def reject_join_request(
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_required)
 ):
-    join_request = db.query(JoinRequest).filter(JoinRequest.id == request_id).first()
+    join_request = db.query(JoinRequest).filter(
+        JoinRequest.id == request_id
+    ).first()
 
     if not join_request:
         raise HTTPException(status_code=404, detail="Join request not found")
@@ -182,6 +288,28 @@ def reject_join_request(
     db.refresh(join_request)
 
     return {
-        "message": "Join request rejected",
-        "join_request": join_request
+        "message": "Join request rejected successfully",
+        "join_request_id": join_request.id,
+        "status": join_request.status,
+    }
+
+
+@router.delete("/{request_id}")
+def delete_join_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_required)
+):
+    join_request = db.query(JoinRequest).filter(
+        JoinRequest.id == request_id
+    ).first()
+
+    if not join_request:
+        raise HTTPException(status_code=404, detail="Join request not found")
+
+    db.delete(join_request)
+    db.commit()
+
+    return {
+        "message": "Join request deleted successfully"
     }

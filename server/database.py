@@ -3,7 +3,9 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
 import os
 
-load_dotenv()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DOTENV_PATH = os.path.join(BASE_DIR, ".env")
+load_dotenv(DOTENV_PATH)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 

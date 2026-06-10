@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useCallback, useEffect, useState } from "react";
 import API from "../services/api";
 import MeetupCard from "../components/MeetupCard";
 
@@ -6,7 +6,7 @@ function Meetups() {
   const [meetups, setMeetups] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchMeetups = async () => {
+  const fetchMeetups = useCallback(async () => {
     try {
       const res = await API.get("/meetups/");
       setMeetups(res.data);
@@ -15,11 +15,15 @@ function Meetups() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchMeetups();
-  }, []);
+    const loadMeetups = async () => {
+      await fetchMeetups();
+    };
+
+    loadMeetups();
+  }, [fetchMeetups]);
 
   return (
     <div className="page">

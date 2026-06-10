@@ -8,15 +8,19 @@ function Communities() {
     search: "",
     category: "",
     city: "",
+    sort: "newest",
   });
+
   const [loading, setLoading] = useState(true);
 
   const fetchCommunities = async () => {
     try {
       setLoading(true);
+
       const res = await API.get("/communities/", {
         params: filters,
       });
+
       setCommunities(res.data);
     } catch (error) {
       console.log(error);
@@ -26,7 +30,28 @@ function Communities() {
   };
 
   useEffect(() => {
-    fetchCommunities();
+    const loadCommunities = async () => {
+      try {
+        setLoading(true);
+
+        const res = await API.get("/communities/", {
+          params: {
+            search: "",
+            category: "",
+            city: "",
+            sort: "newest",
+          },
+        });
+
+        setCommunities(res.data);
+      } catch (error) {
+        console.log(error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadCommunities();
   }, []);
 
   const handleChange = (e) => {
@@ -45,40 +70,58 @@ function Communities() {
     <div className="page">
       <h1 className="page-title">Explore Communities</h1>
       <p className="page-subtitle">
-        Find communities based on your interests, city, and career goals.
+        Find communities based on your interests, city, member count, and meetup activity.
       </p>
 
       <form className="panel form-grid" onSubmit={handleSearch}>
-        <input
-          name="search"
-          placeholder="Search by community name"
-          value={filters.search}
-          onChange={handleChange}
-        />
+        <div className="form-group">
+          <label>Search Community</label>
+          <input
+            name="search"
+            placeholder="Search by community name"
+            value={filters.search}
+            onChange={handleChange}
+          />
+        </div>
 
-        <input
-          name="category"
-          placeholder="Category e.g. AI, Startup, Design"
-          value={filters.category}
-          onChange={handleChange}
-        />
+        <div className="form-group">
+          <label>Category</label>
+          <input
+            name="category"
+            placeholder="Example: AI, Startup, Design"
+            value={filters.category}
+            onChange={handleChange}
+          />
+        </div>
 
-        <input
-          name="city"
-          placeholder="City"
-          value={filters.city}
-          onChange={handleChange}
-        />
+        <div className="form-group">
+          <label>City</label>
+          <input
+            name="city"
+            placeholder="Example: Hyderabad"
+            value={filters.city}
+            onChange={handleChange}
+          />
+        </div>
 
-        <button className="primary-btn" type="submit">
-          Search
+        <div className="form-group">
+          <label>Sort By</label>
+          <select name="sort" value={filters.sort} onChange={handleChange}>
+            <option value="newest">Newest</option>
+            <option value="member_count">Member Count</option>
+            <option value="meetup_count">Meetup Count</option>
+          </select>
+        </div>
+
+        <button className="primary-btn full" type="submit">
+          Search / Sort
         </button>
       </form>
 
       {loading ? (
         <p className="page-subtitle">Loading communities...</p>
       ) : communities.length === 0 ? (
-        <div className="panel">
+        <div className="panel" style={{ marginTop: "24px" }}>
           <h3>No communities found</h3>
           <p>Admin should create communities first.</p>
         </div>

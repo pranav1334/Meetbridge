@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useCallback, useEffect, useState } from "react";
 import API from "../services/api";
 
 function CreateMeetup() {
@@ -23,18 +23,22 @@ function CreateMeetup() {
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
 
-  const fetchCommunities = async () => {
+  const fetchCommunities = useCallback(async () => {
     try {
       const res = await API.get("/communities/");
       setCommunities(res.data);
-    } catch (error) {
+    } catch {
       setError("Failed to load communities");
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchCommunities();
-  }, []);
+    const loadCommunities = async () => {
+      await fetchCommunities();
+    };
+
+    loadCommunities();
+  }, [fetchCommunities]);
 
   const handleChange = (e) => {
     setForm({
