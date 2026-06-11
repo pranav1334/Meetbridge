@@ -18,6 +18,7 @@ function Register() {
     can_help_with: "",
   });
 
+  const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -141,15 +142,26 @@ function Register() {
 
         <div className="form-group">
           <label>Password</label>
-          <input
-            name="password"
-            type="password"
-            placeholder="Create password"
-            value={form.password}
-            onChange={handleChange}
-            required
-            minLength="6"
-          />
+
+          <div className="password-box">
+            <input
+              name="password"
+              type={showPassword ? "text" : "password"}
+              placeholder="Create password"
+              value={form.password}
+              onChange={handleChange}
+              required
+              minLength="6"
+            />
+
+            <button
+              type="button"
+              className="show-password-btn"
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
         </div>
 
         <div className="form-group">

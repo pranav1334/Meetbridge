@@ -44,7 +44,7 @@ function Navbar() {
         {token && <Link to="/members">Members</Link>}
         {token && <Link to="/dashboard">Dashboard</Link>}
         {token && <Link to="/messages">Messages</Link>}
-        {token && <Link to="/ai-chatbox">AI Chatbox</Link>}
+        {token && <Link to="/ai-chatbox">AI Assistant</Link>}
         {token && <Link to="/notifications">Notifications</Link>}
 
         {user?.role === "admin" && <Link to="/admin">Admin</Link>}

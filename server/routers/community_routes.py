@@ -1,22 +1,29 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from datetime import datetime
 
 from database import get_db
-from models import Community, User, JoinRequest, Meetup
-from schemas import CommunityCreate
-from auth import admin_required
+from models import (
+    User,
+    Community,
+    JoinRequest,
+    Meetup,
+    MeetupRegistration,
+    Attendance,
+    Message,
+)
+from auth import get_current_user, admin_required
 
 router = APIRouter(prefix="/api/communities", tags=["Communities"])
 
 
 def community_to_dict(db: Session, community: Community):
-    member_count = db.query(JoinRequest).filter(
+    approved_members = db.query(JoinRequest).filter(
         JoinRequest.community_id == community.id,
         JoinRequest.status == "approved"
     ).count()
 
-    upcoming_meetup_count = db.query(Meetup).filter(
+    meetup_count = db.query(Meetup).filter(
         Meetup.community_id == community.id
     ).count()
 
@@ -36,47 +43,29 @@ def community_to_dict(db: Session, community: Community):
         "approval_type": community.approval_type,
         "created_by": community.created_by,
         "created_at": community.created_at,
-        "member_count": member_count,
-        "upcoming_meetup_count": upcoming_meetup_count
+        "member_count": approved_members,
+        "upcoming_meetup_count": meetup_count,
     }
 
 
 @router.get("/")
-def get_all_communities(
-    search: str = "",
-    category: str = "",
-    city: str = "",
-    sort: str = "newest",
-    db: Session = Depends(get_db)
-):
-    query = db.query(Community)
+def get_communities(db: Session = Depends(get_db)):
+    communities = db.query(Community).order_by(Community.id.desc()).all()
 
-    if search:
-        query = query.filter(Community.name.ilike(f"%{search}%"))
-
-    if category:
-        query = query.filter(Community.category.ilike(f"%{category}%"))
-
-    if city:
-        query = query.filter(Community.city.ilike(f"%{city}%"))
-
-    communities = query.all()
-
-    result = [community_to_dict(db, community) for community in communities]
-
-    if sort == "member_count":
-        result.sort(key=lambda item: item["member_count"], reverse=True)
-    elif sort == "meetup_count":
-        result.sort(key=lambda item: item["upcoming_meetup_count"], reverse=True)
-    else:
-        result.sort(key=lambda item: item["id"], reverse=True)
-
-    return result
+    return [
+        community_to_dict(db, community)
+        for community in communities
+    ]
 
 
 @router.get("/{community_id}")
-def get_community(community_id: int, db: Session = Depends(get_db)):
-    community = db.query(Community).filter(Community.id == community_id).first()
+def get_community(
+    community_id: int,
+    db: Session = Depends(get_db)
+):
+    community = db.query(Community).filter(
+        Community.id == community_id
+    ).first()
 
     if not community:
         raise HTTPException(status_code=404, detail="Community not found")
@@ -86,68 +75,91 @@ def get_community(community_id: int, db: Session = Depends(get_db)):
 
 @router.post("/")
 def create_community(
-    community: CommunityCreate,
+    data: dict,
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_required)
 ):
-    new_community = Community(
-        name=community.name,
-        logo=community.logo,
-        cover_image=community.cover_image,
-        description=community.description,
-        category=community.category,
-        city=community.city,
-        website=community.website,
-        whatsapp_link=community.whatsapp_link,
-        discord_link=community.discord_link,
-        instagram_link=community.instagram_link,
-        rules=community.rules,
-        approval_type=community.approval_type,
-        created_by=current_user.id
+    name = data.get("name")
+    description = data.get("description")
+    category = data.get("category")
+    city = data.get("city")
+
+    if not name or not description or not category or not city:
+        raise HTTPException(
+            status_code=400,
+            detail="Name, description, category, and city are required"
+        )
+
+    community = Community(
+        name=name,
+        logo=data.get("logo"),
+        cover_image=data.get("cover_image"),
+        description=description,
+        category=category,
+        city=city,
+        website=data.get("website"),
+        whatsapp_link=data.get("whatsapp_link"),
+        discord_link=data.get("discord_link"),
+        instagram_link=data.get("instagram_link"),
+        rules=data.get("rules"),
+        approval_type=data.get("approval_type") or "admin",
+        created_by=current_user.id,
     )
 
-    db.add(new_community)
+    db.add(community)
     db.commit()
-    db.refresh(new_community)
+    db.refresh(community)
 
     return {
         "message": "Community created successfully",
-        "community": community_to_dict(db, new_community)
+        "community": community_to_dict(db, community),
     }
 
 
 @router.put("/{community_id}")
 def update_community(
     community_id: int,
-    community: CommunityCreate,
+    data: dict,
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_required)
 ):
-    db_community = db.query(Community).filter(Community.id == community_id).first()
+    community = db.query(Community).filter(
+        Community.id == community_id
+    ).first()
 
-    if not db_community:
+    if not community:
         raise HTTPException(status_code=404, detail="Community not found")
 
-    db_community.name = community.name
-    db_community.logo = community.logo
-    db_community.cover_image = community.cover_image
-    db_community.description = community.description
-    db_community.category = community.category
-    db_community.city = community.city
-    db_community.website = community.website
-    db_community.whatsapp_link = community.whatsapp_link
-    db_community.discord_link = community.discord_link
-    db_community.instagram_link = community.instagram_link
-    db_community.rules = community.rules
-    db_community.approval_type = community.approval_type
+    community.name = data.get("name", community.name)
+    community.logo = data.get("logo", community.logo)
+    community.cover_image = data.get("cover_image", community.cover_image)
+    community.description = data.get("description", community.description)
+    community.category = data.get("category", community.category)
+    community.city = data.get("city", community.city)
+    community.website = data.get("website", community.website)
+    community.whatsapp_link = data.get("whatsapp_link", community.whatsapp_link)
+    community.discord_link = data.get("discord_link", community.discord_link)
+    community.instagram_link = data.get("instagram_link", community.instagram_link)
+    community.rules = data.get("rules", community.rules)
+    community.approval_type = data.get("approval_type", community.approval_type)
 
     db.commit()
-    db.refresh(db_community)
+    db.refresh(community)
 
     return {
         "message": "Community updated successfully",
-        "community": community_to_dict(db, db_community)
+        "community": community_to_dict(db, community),
     }
+
+
+@router.patch("/{community_id}")
+def patch_community(
+    community_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_required)
+):
+    return update_community(community_id, data, db, current_user)
 
 
 @router.delete("/{community_id}")
@@ -156,59 +168,43 @@ def delete_community(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_required)
 ):
-    community = db.query(Community).filter(Community.id == community_id).first()
+    community = db.query(Community).filter(
+        Community.id == community_id
+    ).first()
 
     if not community:
         raise HTTPException(status_code=404, detail="Community not found")
+
+    meetups = db.query(Meetup).filter(
+        Meetup.community_id == community_id
+    ).all()
+
+    meetup_ids = [meetup.id for meetup in meetups]
+
+    if meetup_ids:
+        db.query(Attendance).filter(
+            Attendance.meetup_id.in_(meetup_ids)
+        ).delete(synchronize_session=False)
+
+        db.query(MeetupRegistration).filter(
+            MeetupRegistration.meetup_id.in_(meetup_ids)
+        ).delete(synchronize_session=False)
+
+        db.query(Meetup).filter(
+            Meetup.id.in_(meetup_ids)
+        ).delete(synchronize_session=False)
+
+    db.query(Message).filter(
+        Message.community_id == community_id
+    ).delete(synchronize_session=False)
+
+    db.query(JoinRequest).filter(
+        JoinRequest.community_id == community_id
+    ).delete(synchronize_session=False)
 
     db.delete(community)
     db.commit()
 
     return {
-        "message": "Community deleted successfully"
-    }
-
-
-@router.get("/{community_id}/analytics")
-def community_analytics(
-    community_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(admin_required)
-):
-    community = db.query(Community).filter(Community.id == community_id).first()
-
-    if not community:
-        raise HTTPException(status_code=404, detail="Community not found")
-
-    total_requests = db.query(JoinRequest).filter(
-        JoinRequest.community_id == community_id
-    ).count()
-
-    approved_members = db.query(JoinRequest).filter(
-        JoinRequest.community_id == community_id,
-        JoinRequest.status == "approved"
-    ).count()
-
-    pending_requests = db.query(JoinRequest).filter(
-        JoinRequest.community_id == community_id,
-        JoinRequest.status == "pending"
-    ).count()
-
-    rejected_requests = db.query(JoinRequest).filter(
-        JoinRequest.community_id == community_id,
-        JoinRequest.status == "rejected"
-    ).count()
-
-    total_meetups = db.query(Meetup).filter(
-        Meetup.community_id == community_id
-    ).count()
-
-    return {
-        "community_id": community.id,
-        "community_name": community.name,
-        "total_requests": total_requests,
-        "approved_members": approved_members,
-        "pending_requests": pending_requests,
-        "rejected_requests": rejected_requests,
-        "total_meetups": total_meetups
+        "message": "Community and related data deleted successfully"
     }

@@ -2,13 +2,56 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import API from "../services/api";
 
+function FormattedAIText({ text }) {
+  if (!text) return null;
+
+  const cleanText = text
+    .replace(/\*\*/g, "")
+    .replace(/###/g, "")
+    .replace(/##/g, "")
+    .replace(/#/g, "")
+    .replace(/(\d+\.\s)/g, "\n$1")
+    .replace(/\s-\s/g, "\n- ")
+    .trim();
+
+  const lines = cleanText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return (
+    <div className="formatted-ai-answer">
+      {lines.map((line, index) => {
+        if (/^\d+\./.test(line)) {
+          return (
+            <h4 key={index} className="ai-answer-heading">
+              {line}
+            </h4>
+          );
+        }
+
+        if (line.startsWith("-")) {
+          return (
+            <div key={index} className="ai-answer-bullet">
+              <span>•</span>
+              <p>{line.replace("-", "").trim()}</p>
+            </div>
+          );
+        }
+
+        return <p key={index}>{line}</p>;
+      })}
+    </div>
+  );
+}
+
 function AIChatBox() {
   const [messages, setMessages] = useState([
     {
       sender: "ai",
       type: "text",
       text:
-        "Hi, I am MeetBridge AI. You can ask me: improve my profile, recommend communities, recommend meetups, find member matches for community 1, find people to meet in meetup 1, classify opportunity, check safety, summarize meetup 1.",
+        "Hi, I am your MeetBridge AI Assistant. I can help you choose the right communities, improve your profile, discover useful meetups, find members to connect with, check opportunities, and keep conversations safer. Type your question below or choose any tool from the left side.",
     },
   ]);
 
@@ -87,7 +130,7 @@ function AIChatBox() {
           title: "Community ID Required",
           data: {
             message:
-              "Please type community ID. Example: find member matches for community 1",
+              "Please enter a community ID. Example: Find member matches for community 1.",
           },
         };
       }
@@ -112,7 +155,7 @@ function AIChatBox() {
           title: "Meetup ID Required",
           data: {
             message:
-              "Please type meetup ID. Example: find people to meet in meetup 1",
+              "Please enter a meetup ID. Example: Find people to meet in meetup 1.",
           },
         };
       }
@@ -137,7 +180,7 @@ function AIChatBox() {
           title: "Opportunity Text Required",
           data: {
             message:
-              "Please type opportunity text. Example: classify opportunity: React internship for students",
+              "Please type opportunity text. Example: Classify opportunity: React internship for students with frontend skills.",
           },
         };
       }
@@ -165,7 +208,7 @@ function AIChatBox() {
           title: "Safety Text Required",
           data: {
             message:
-              "Please type text to check. Example: check safety: this message is spam",
+              "Please enter text to check. Example: Check safety: I am looking for a React teammate.",
           },
         };
       }
@@ -191,7 +234,7 @@ function AIChatBox() {
         return {
           title: "Meetup ID Required",
           data: {
-            message: "Please type meetup ID. Example: summarize meetup 1",
+            message: "Please enter a meetup ID. Example: Summarize meetup 1.",
           },
         };
       }
@@ -242,12 +285,14 @@ function AIChatBox() {
         data: result.data,
       });
     } catch (error) {
-      console.log("AI Chatbox error:", error.response?.data);
+      console.log("AI Assistant error:", error.response?.data);
 
       addMessage({
         sender: "ai",
         type: "text",
-        text: error.response?.data?.detail || "AI request failed",
+        text:
+          error.response?.data?.detail ||
+          "AI request failed. Please try again.",
       });
     } finally {
       setLoading(false);
@@ -277,7 +322,7 @@ function AIChatBox() {
     }
 
     if (data.answer) {
-      return <p>{data.answer}</p>;
+      return <FormattedAIText text={data.answer} />;
     }
 
     if (title === "AI Profile Builder") {
@@ -289,24 +334,24 @@ function AIChatBox() {
           </div>
 
           <div className="ai-chat-result-card">
-            <h4>Looking For</h4>
+            <h4>Improved Looking For</h4>
             <p>{data.improved_looking_for}</p>
           </div>
 
           <div className="ai-chat-result-card">
-            <h4>Can Help With</h4>
+            <h4>Improved Can Help With</h4>
             <p>{data.improved_can_help_with}</p>
           </div>
 
           <div className="ai-chat-result-card">
-            <h4>Profile Score</h4>
+            <h4>Profile Strength</h4>
             <div className="ai-chat-score">
               {data.profile_strength_score || 0}/100
             </div>
           </div>
 
           <div className="ai-chat-result-card full-card">
-            <h4>Tips</h4>
+            <h4>Tips to Improve</h4>
             {renderList(data.tips)}
           </div>
         </div>
@@ -525,15 +570,48 @@ function AIChatBox() {
 
   return (
     <div className="page">
-      <h1 className="page-title">MeetBridge AI Chatbox</h1>
+      <h1 className="page-title">MeetBridge AI Assistant</h1>
+
       <p className="page-subtitle">
-        One chatbox for all AI features: profile, recommendations, matchmaking,
-        safety, opportunities, and meetup summaries.
+        Your smart assistant for community discovery, meetup planning, member
+        networking, opportunity checking, profile improvement, and safety
+        support.
       </p>
+
+      <div className="ai-assistant-info">
+        <div className="ai-info-card">
+          <h3>Smart Guidance</h3>
+          <p>
+            Get help choosing communities, improving your profile, finding
+            meetups, and understanding opportunities.
+          </p>
+        </div>
+
+        <div className="ai-info-card">
+          <h3>Connected to MeetBridge</h3>
+          <p>
+            The assistant works with platform data like communities, meetups,
+            members, join requests, attendance, and messages.
+          </p>
+        </div>
+
+        <div className="ai-info-card">
+          <h3>Simple Commands</h3>
+          <p>
+            Use natural commands like “Recommend communities”, “Improve my
+            profile”, or “Find people to meet in meetup 1”.
+          </p>
+        </div>
+      </div>
 
       <div className="ai-chat-layout">
         <div className="ai-chat-help">
-          <h3>Try these commands</h3>
+          <h3>AI Tools</h3>
+
+          <p className="ai-help-text">
+            Choose a tool or type your own question. You can edit the text before
+            sending.
+          </p>
 
           <button onClick={() => setInput("Improve my profile")}>
             Improve my profile
@@ -547,26 +625,18 @@ function AIChatBox() {
             Recommend meetups
           </button>
 
-          <button
-            onClick={() =>
-              setInput("Find member matches for community 1")
-            }
-          >
+          <button onClick={() => setInput("Find member matches for community 1")}>
             Member matches
           </button>
 
-          <button
-            onClick={() =>
-              setInput("Find people to meet in meetup 1")
-            }
-          >
+          <button onClick={() => setInput("Find people to meet in meetup 1")}>
             People to meet
           </button>
 
           <button
             onClick={() =>
               setInput(
-                "Classify opportunity: React internship for students with frontend skills"
+                "Classify opportunity: React internship for students with HTML, CSS, JavaScript, and React skills"
               )
             }
           >
@@ -575,7 +645,9 @@ function AIChatBox() {
 
           <button
             onClick={() =>
-              setInput("Check safety: Join my casino betting group")
+              setInput(
+                "Check safety: I am looking for a React teammate for my AI project"
+              )
             }
           >
             Safety check
@@ -597,7 +669,7 @@ function AIChatBox() {
                     : "ai-message bot-message"
                 }
               >
-                {message.type === "text" && <p>{message.text}</p>}
+                {message.type === "text" && <FormattedAIText text={message.text} />}
 
                 {message.type === "result" && (
                   <>
@@ -610,7 +682,7 @@ function AIChatBox() {
 
             {loading && (
               <div className="ai-message bot-message">
-                <p>AI is thinking...</p>
+                <p>AI Assistant is thinking...</p>
               </div>
             )}
           </div>
@@ -618,7 +690,7 @@ function AIChatBox() {
           <form className="ai-chat-input" onSubmit={sendMessage}>
             <input
               type="text"
-              placeholder="Ask AI anything..."
+              placeholder="Ask MeetBridge AI Assistant..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
             />

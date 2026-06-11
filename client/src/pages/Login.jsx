@@ -129,6 +129,7 @@ function Login() {
 
             <button
               type="button"
+              className="show-password-btn"
               onClick={() => setShowPassword(!showPassword)}
             >
               {showPassword ? "Hide" : "Show"}

@@ -1,34 +1,37 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from io import StringIO
-import csv
+from datetime import datetime
 
 from database import get_db
-from models import Meetup, MeetupRegistration, Attendance, JoinRequest, User
-from schemas import MeetupCreate, MeetupRegisterCreate
+from models import (
+    User,
+    Community,
+    Meetup,
+    MeetupRegistration,
+    Attendance,
+)
 from auth import get_current_user, admin_required
 
 router = APIRouter(prefix="/api/meetups", tags=["Meetups"])
 
 
-def meetup_to_dict(meetup: Meetup, db: Session):
-    registration_count = db.query(MeetupRegistration).filter(
+def meetup_to_dict(db: Session, meetup: Meetup):
+    community = db.query(Community).filter(
+        Community.id == meetup.community_id
+    ).first()
+
+    registered_count = db.query(MeetupRegistration).filter(
         MeetupRegistration.meetup_id == meetup.id
     ).count()
 
-    checkin_count = db.query(Attendance).filter(
+    checked_in_count = db.query(Attendance).filter(
         Attendance.meetup_id == meetup.id
     ).count()
-
-    attendance_percentage = 0
-
-    if registration_count > 0:
-        attendance_percentage = round((checkin_count / registration_count) * 100, 2)
 
     return {
         "id": meetup.id,
         "community_id": meetup.community_id,
+        "community_name": community.name if community else "Unknown Community",
         "title": meetup.title,
         "banner": meetup.banner,
         "description": meetup.description,
@@ -41,90 +44,155 @@ def meetup_to_dict(meetup: Meetup, db: Session):
         "registration_deadline": meetup.registration_deadline,
         "created_by": meetup.created_by,
         "created_at": meetup.created_at,
-        "registration_count": registration_count,
-        "checkin_count": checkin_count,
-        "attendance_percentage": attendance_percentage
+        "registered_count": registered_count,
+        "checked_in_count": checked_in_count,
+        "total_registrations": registered_count,
+        "total_checkins": checked_in_count,
     }
 
 
 @router.get("/")
-def get_all_meetups(db: Session = Depends(get_db)):
+def get_meetups(db: Session = Depends(get_db)):
     meetups = db.query(Meetup).order_by(Meetup.id.desc()).all()
-    return [meetup_to_dict(meetup, db) for meetup in meetups]
+
+    return [
+        meetup_to_dict(db, meetup)
+        for meetup in meetups
+    ]
 
 
 @router.get("/{meetup_id}")
-def get_meetup(meetup_id: int, db: Session = Depends(get_db)):
-    meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
+def get_meetup(
+    meetup_id: int,
+    db: Session = Depends(get_db)
+):
+    meetup = db.query(Meetup).filter(
+        Meetup.id == meetup_id
+    ).first()
 
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
 
-    return meetup_to_dict(meetup, db)
+    return meetup_to_dict(db, meetup)
 
 
 @router.post("/")
 def create_meetup(
-    meetup: MeetupCreate,
+    data: dict,
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_required)
 ):
-    new_meetup = Meetup(
-        community_id=meetup.community_id,
-        title=meetup.title,
-        banner=meetup.banner,
-        description=meetup.description,
-        date=meetup.date,
-        start_time=meetup.start_time,
-        end_time=meetup.end_time,
-        venue_name=meetup.venue_name,
-        google_maps_link=meetup.google_maps_link,
-        capacity_limit=meetup.capacity_limit,
-        registration_deadline=meetup.registration_deadline,
-        created_by=current_user.id
+    required_fields = [
+        "community_id",
+        "title",
+        "description",
+        "date",
+        "start_time",
+        "end_time",
+        "venue_name",
+        "capacity_limit",
+    ]
+
+    for field in required_fields:
+        if data.get(field) in [None, ""]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{field} is required"
+            )
+
+    community = db.query(Community).filter(
+        Community.id == int(data.get("community_id"))
+    ).first()
+
+    if not community:
+        raise HTTPException(status_code=404, detail="Community not found")
+
+    meetup = Meetup(
+        community_id=int(data.get("community_id")),
+        title=data.get("title"),
+        banner=data.get("banner"),
+        description=data.get("description"),
+        date=data.get("date"),
+        start_time=data.get("start_time"),
+        end_time=data.get("end_time"),
+        venue_name=data.get("venue_name"),
+        google_maps_link=data.get("google_maps_link"),
+        capacity_limit=int(data.get("capacity_limit")),
+        registration_deadline=data.get("registration_deadline"),
+        created_by=current_user.id,
     )
 
-    db.add(new_meetup)
+    db.add(meetup)
     db.commit()
-    db.refresh(new_meetup)
+    db.refresh(meetup)
 
     return {
         "message": "Meetup created successfully",
-        "meetup": meetup_to_dict(new_meetup, db)
+        "meetup": meetup_to_dict(db, meetup),
     }
 
 
 @router.put("/{meetup_id}")
 def update_meetup(
     meetup_id: int,
-    meetup: MeetupCreate,
+    data: dict,
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_required)
 ):
-    db_meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
+    meetup = db.query(Meetup).filter(
+        Meetup.id == meetup_id
+    ).first()
 
-    if not db_meetup:
+    if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
 
-    db_meetup.community_id = meetup.community_id
-    db_meetup.title = meetup.title
-    db_meetup.banner = meetup.banner
-    db_meetup.description = meetup.description
-    db_meetup.date = meetup.date
-    db_meetup.start_time = meetup.start_time
-    db_meetup.end_time = meetup.end_time
-    db_meetup.venue_name = meetup.venue_name
-    db_meetup.google_maps_link = meetup.google_maps_link
-    db_meetup.capacity_limit = meetup.capacity_limit
-    db_meetup.registration_deadline = meetup.registration_deadline
+    if data.get("community_id"):
+        community = db.query(Community).filter(
+            Community.id == int(data.get("community_id"))
+        ).first()
+
+        if not community:
+            raise HTTPException(status_code=404, detail="Community not found")
+
+        meetup.community_id = int(data.get("community_id"))
+
+    meetup.title = data.get("title", meetup.title)
+    meetup.banner = data.get("banner", meetup.banner)
+    meetup.description = data.get("description", meetup.description)
+    meetup.date = data.get("date", meetup.date)
+    meetup.start_time = data.get("start_time", meetup.start_time)
+    meetup.end_time = data.get("end_time", meetup.end_time)
+    meetup.venue_name = data.get("venue_name", meetup.venue_name)
+    meetup.google_maps_link = data.get(
+        "google_maps_link",
+        meetup.google_maps_link
+    )
+
+    if data.get("capacity_limit") not in [None, ""]:
+        meetup.capacity_limit = int(data.get("capacity_limit"))
+
+    meetup.registration_deadline = data.get(
+        "registration_deadline",
+        meetup.registration_deadline
+    )
 
     db.commit()
-    db.refresh(db_meetup)
+    db.refresh(meetup)
 
     return {
         "message": "Meetup updated successfully",
-        "meetup": meetup_to_dict(db_meetup, db)
+        "meetup": meetup_to_dict(db, meetup),
     }
+
+
+@router.patch("/{meetup_id}")
+def patch_meetup(
+    meetup_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_required)
+):
+    return update_meetup(meetup_id, data, db, current_user)
 
 
 @router.delete("/{meetup_id}")
@@ -133,63 +201,88 @@ def delete_meetup(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_required)
 ):
-    meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
+    meetup = db.query(Meetup).filter(
+        Meetup.id == meetup_id
+    ).first()
 
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
+
+    db.query(Attendance).filter(
+        Attendance.meetup_id == meetup_id
+    ).delete(synchronize_session=False)
+
+    db.query(MeetupRegistration).filter(
+        MeetupRegistration.meetup_id == meetup_id
+    ).delete(synchronize_session=False)
 
     db.delete(meetup)
     db.commit()
 
-    return {"message": "Meetup deleted successfully"}
+    return {
+        "message": "Meetup, registrations, and attendance records deleted successfully"
+    }
 
 
-@router.post("/register")
+@router.post("/{meetup_id}/register")
 def register_for_meetup(
-    registration: MeetupRegisterCreate,
+    meetup_id: int,
+    data: dict,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    meetup = db.query(Meetup).filter(Meetup.id == registration.meetup_id).first()
+    meetup = db.query(Meetup).filter(
+        Meetup.id == meetup_id
+    ).first()
 
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
 
-    approved_member = db.query(JoinRequest).filter(
-        JoinRequest.user_id == current_user.id,
-        JoinRequest.community_id == meetup.community_id,
-        JoinRequest.status == "approved"
+    existing = db.query(MeetupRegistration).filter(
+        MeetupRegistration.meetup_id == meetup_id,
+        MeetupRegistration.user_id == current_user.id
     ).first()
 
-    if not approved_member:
+    if existing:
         raise HTTPException(
-            status_code=403,
-            detail="Only approved community members can register for this meetup"
+            status_code=400,
+            detail="You already registered for this meetup"
         )
 
-    existing_registration = db.query(MeetupRegistration).filter(
-        MeetupRegistration.user_id == current_user.id,
-        MeetupRegistration.meetup_id == registration.meetup_id
-    ).first()
+    registered_count = db.query(MeetupRegistration).filter(
+        MeetupRegistration.meetup_id == meetup_id
+    ).count()
 
-    if existing_registration:
-        raise HTTPException(status_code=400, detail="Already registered for this meetup")
+    if registered_count >= meetup.capacity_limit:
+        raise HTTPException(
+            status_code=400,
+            detail="Meetup capacity is full"
+        )
 
-    new_registration = MeetupRegistration(
-        meetup_id=registration.meetup_id,
+    registration = MeetupRegistration(
+        meetup_id=meetup_id,
         user_id=current_user.id,
-        reason=registration.reason,
-        want_to_learn=registration.want_to_learn,
-        contribution=registration.contribution
+        reason=data.get("reason"),
+        want_to_learn=data.get("want_to_learn"),
+        contribution=data.get("contribution"),
+        status="registered",
     )
 
-    db.add(new_registration)
+    db.add(registration)
     db.commit()
-    db.refresh(new_registration)
+    db.refresh(registration)
 
     return {
-        "message": "Meetup registration successful",
-        "registration": new_registration
+        "message": "Registered for meetup successfully",
+        "registration": {
+            "id": registration.id,
+            "meetup_id": registration.meetup_id,
+            "user_id": registration.user_id,
+            "reason": registration.reason,
+            "want_to_learn": registration.want_to_learn,
+            "contribution": registration.contribution,
+            "status": registration.status,
+        }
     }
 
 
@@ -199,287 +292,114 @@ def check_in_meetup(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    meetup = db.query(Meetup).filter(
+        Meetup.id == meetup_id
+    ).first()
+
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
+
     registration = db.query(MeetupRegistration).filter(
-        MeetupRegistration.user_id == current_user.id,
-        MeetupRegistration.meetup_id == meetup_id
+        MeetupRegistration.meetup_id == meetup_id,
+        MeetupRegistration.user_id == current_user.id
     ).first()
 
     if not registration:
-        raise HTTPException(status_code=403, detail="You must register before check-in")
+        raise HTTPException(
+            status_code=400,
+            detail="You must register before check-in"
+        )
 
     existing_attendance = db.query(Attendance).filter(
-        Attendance.user_id == current_user.id,
-        Attendance.meetup_id == meetup_id
+        Attendance.meetup_id == meetup_id,
+        Attendance.user_id == current_user.id
     ).first()
 
     if existing_attendance:
-        raise HTTPException(status_code=400, detail="Already checked in")
+        raise HTTPException(
+            status_code=400,
+            detail="You already checked in"
+        )
 
     attendance = Attendance(
-        user_id=current_user.id,
         meetup_id=meetup_id,
-        status="checked_in"
+        user_id=current_user.id,
+        status="checked_in",
+        check_in_time=datetime.utcnow(),
     )
-
-    registration.status = "checked_in"
 
     db.add(attendance)
     db.commit()
     db.refresh(attendance)
 
     return {
-        "message": "Check-in successful",
-        "attendance": attendance
-    }
-
-
-@router.get("/{meetup_id}/registered-members")
-def get_registered_members(
-    meetup_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
-
-    if not meetup:
-        raise HTTPException(status_code=404, detail="Meetup not found")
-
-    if current_user.role != "admin":
-        user_registration = db.query(MeetupRegistration).filter(
-            MeetupRegistration.meetup_id == meetup_id,
-            MeetupRegistration.user_id == current_user.id
-        ).first()
-
-        if not user_registration:
-            raise HTTPException(
-                status_code=403,
-                detail="Only registered attendees can view registered members"
-            )
-
-    registrations = db.query(MeetupRegistration).filter(
-        MeetupRegistration.meetup_id == meetup_id
-    ).all()
-
-    result = []
-
-    for reg in registrations:
-        user = db.query(User).filter(User.id == reg.user_id).first()
-
-        if user:
-            result.append({
-                "registration_id": reg.id,
-                "user_id": user.id,
-                "full_name": user.full_name,
-                "profile_picture": user.profile_picture,
-                "profession": user.profession,
-                "company_college": user.company_college,
-                "city": user.city,
-                "looking_for": user.looking_for,
-                "can_help_with": user.can_help_with,
-                "reason": reg.reason,
-                "want_to_learn": reg.want_to_learn,
-                "contribution": reg.contribution,
-                "status": reg.status
-            })
-
-    return result
-
-
-@router.get("/{meetup_id}/checked-in-members")
-def get_checked_in_members(
-    meetup_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
-
-    if not meetup:
-        raise HTTPException(status_code=404, detail="Meetup not found")
-
-    if current_user.role != "admin":
-        user_attendance = db.query(Attendance).filter(
-            Attendance.meetup_id == meetup_id,
-            Attendance.user_id == current_user.id
-        ).first()
-
-        if not user_attendance:
-            raise HTTPException(
-                status_code=403,
-                detail="Only checked-in attendees can view live attendee list"
-            )
-
-    attendance_records = db.query(Attendance).filter(
-        Attendance.meetup_id == meetup_id
-    ).all()
-
-    result = []
-
-    for record in attendance_records:
-        user = db.query(User).filter(User.id == record.user_id).first()
-
-        if user:
-            result.append({
-                "attendance_id": record.id,
-                "user_id": user.id,
-                "full_name": user.full_name,
-                "profile_picture": user.profile_picture,
-                "profession": user.profession,
-                "company_college": user.company_college,
-                "city": user.city,
-                "looking_for": user.looking_for,
-                "can_help_with": user.can_help_with,
-                "check_in_time": record.check_in_time,
-                "status": record.status
-            })
-
-    return {
-        "count": len(result),
-        "checked_in_members": result
+        "message": "Checked in successfully",
+        "attendance": {
+            "id": attendance.id,
+            "meetup_id": attendance.meetup_id,
+            "user_id": attendance.user_id,
+            "status": attendance.status,
+            "check_in_time": attendance.check_in_time,
+        }
     }
 
 
 @router.get("/{meetup_id}/analytics")
-def get_meetup_analytics(
+def meetup_analytics(
     meetup_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_required)
 ):
-    meetup = db.query(Meetup).filter(Meetup.id == meetup_id).first()
+    meetup = db.query(Meetup).filter(
+        Meetup.id == meetup_id
+    ).first()
 
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
 
-    total_registrations = db.query(MeetupRegistration).filter(
-        MeetupRegistration.meetup_id == meetup_id
-    ).count()
-
-    total_checkins = db.query(Attendance).filter(
-        Attendance.meetup_id == meetup_id
-    ).count()
-
-    attendance_percentage = 0
-
-    if total_registrations > 0:
-        attendance_percentage = round((total_checkins / total_registrations) * 100, 2)
-
-    most_active_members = db.query(User).join(
-        Attendance,
-        Attendance.user_id == User.id
-    ).filter(
-        Attendance.meetup_id == meetup_id
-    ).all()
-
-    return {
-        "meetup_id": meetup.id,
-        "meetup_title": meetup.title,
-        "total_registrations": total_registrations,
-        "total_checkins": total_checkins,
-        "attendance_percentage": attendance_percentage,
-        "most_active_members": [
-            {
-                "id": user.id,
-                "full_name": user.full_name,
-                "profession": user.profession,
-                "city": user.city
-            }
-            for user in most_active_members
-        ]
-    }
-
-
-@router.get("/{meetup_id}/export/attendees")
-def export_attendees_csv(
-    meetup_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(admin_required)
-):
-    attendance_records = db.query(Attendance).filter(
-        Attendance.meetup_id == meetup_id
-    ).all()
-
-    output = StringIO()
-    writer = csv.writer(output)
-
-    writer.writerow([
-        "User ID",
-        "Full Name",
-        "Email",
-        "Profession",
-        "Company / College",
-        "City",
-        "Check-in Time",
-        "Status"
-    ])
-
-    for record in attendance_records:
-        user = db.query(User).filter(User.id == record.user_id).first()
-
-        if user:
-            writer.writerow([
-                user.id,
-                user.full_name,
-                user.email,
-                user.profession,
-                user.company_college,
-                user.city,
-                record.check_in_time,
-                record.status
-            ])
-
-    output.seek(0)
-
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={
-            "Content-Disposition": f"attachment; filename=meetup_{meetup_id}_attendees.csv"
-        }
-    )
-
-
-@router.get("/{meetup_id}/export/responses")
-def export_registration_responses_csv(
-    meetup_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(admin_required)
-):
     registrations = db.query(MeetupRegistration).filter(
         MeetupRegistration.meetup_id == meetup_id
     ).all()
 
-    output = StringIO()
-    writer = csv.writer(output)
+    attendance = db.query(Attendance).filter(
+        Attendance.meetup_id == meetup_id
+    ).all()
 
-    writer.writerow([
-        "User ID",
-        "Full Name",
-        "Email",
-        "Reason",
-        "Want To Learn",
-        "Contribution",
-        "Registration Status"
-    ])
+    registration_data = []
 
     for reg in registrations:
         user = db.query(User).filter(User.id == reg.user_id).first()
 
-        if user:
-            writer.writerow([
-                user.id,
-                user.full_name,
-                user.email,
-                reg.reason,
-                reg.want_to_learn,
-                reg.contribution,
-                reg.status
-            ])
+        registration_data.append({
+            "id": reg.id,
+            "user_id": reg.user_id,
+            "user_name": user.full_name if user else "Unknown User",
+            "user_email": user.email if user else "",
+            "reason": reg.reason,
+            "want_to_learn": reg.want_to_learn,
+            "contribution": reg.contribution,
+            "status": reg.status,
+            "created_at": reg.created_at,
+        })
 
-    output.seek(0)
+    attendance_data = []
 
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={
-            "Content-Disposition": f"attachment; filename=meetup_{meetup_id}_responses.csv"
-        }
-    )
+    for item in attendance:
+        user = db.query(User).filter(User.id == item.user_id).first()
+
+        attendance_data.append({
+            "id": item.id,
+            "user_id": item.user_id,
+            "user_name": user.full_name if user else "Unknown User",
+            "user_email": user.email if user else "",
+            "status": item.status,
+            "check_in_time": item.check_in_time,
+        })
+
+    return {
+        "meetup": meetup_to_dict(db, meetup),
+        "total_registrations": len(registrations),
+        "total_checkins": len(attendance),
+        "registrations": registration_data,
+        "attendance": attendance_data,
+    }

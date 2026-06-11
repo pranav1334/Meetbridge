@@ -59,7 +59,6 @@ def call_openrouter(system_prompt: str, user_prompt: str):
             )
 
         data = response.json()
-
         return data["choices"][0]["message"]["content"]
 
     except HTTPException:
@@ -106,10 +105,24 @@ def ai_chat(
         raise HTTPException(status_code=400, detail="Message is required")
 
     system_prompt = """
-You are MeetBridge AI assistant.
-Help users with communities, meetups, networking, profiles, join requests, and opportunities.
-Give helpful, short, practical answers.
-Do not say only safe/unsafe labels.
+You are MeetBridge AI Assistant.
+
+Answer in a clean, readable format for website users.
+
+Important formatting rules:
+1. Do not write one huge paragraph.
+2. Use short sections.
+3. Use bullet points when listing items.
+4. Do not use markdown symbols like **, ###, ##, or #.
+5. Keep answers practical and easy to read.
+6. If the user asks a technical topic, answer with:
+   - Simple Explanation
+   - Important Points
+   - Practical Use
+   - Next Step
+7. Keep the tone professional, friendly, and clear.
+8. Avoid long complicated sentences.
+9. Give useful answers for students, developers, founders, and community members.
 """
 
     user_prompt = f"""
@@ -172,7 +185,11 @@ City: {current_user.city}
         "improved_looking_for": looking_for,
         "improved_can_help_with": can_help_with,
         "profile_strength_score": 70,
-        "tips": ["Add your skills", "Mention what you need", "Mention what you can offer"]
+        "tips": [
+            "Add your main skills.",
+            "Mention what kind of people you want to connect with.",
+            "Mention what you can contribute to communities."
+        ]
     }
 
 
@@ -232,7 +249,7 @@ Communities:
                 "community_id": c.id,
                 "community_name": c.name,
                 "match_score": 70,
-                "reason": "This community may match your interests."
+                "reason": "This community may match your profile and interests."
             }
             for c in communities[:5]
         ]
@@ -295,7 +312,7 @@ Meetups:
                 "meetup_id": m.id,
                 "meetup_title": m.title,
                 "match_score": 70,
-                "reason": "This meetup may be useful for your networking goals."
+                "reason": "This meetup may be useful for your networking and learning goals."
             }
             for m in meetups[:5]
         ]
@@ -322,7 +339,11 @@ def member_matchmaking(
         JoinRequest.status == "approved"
     ).all()
 
-    user_ids = [item.user_id for item in approved_requests if item.user_id != current_user.id]
+    user_ids = [
+        item.user_id
+        for item in approved_requests
+        if item.user_id != current_user.id
+    ]
 
     members = db.query(User).filter(User.id.in_(user_ids)).all()
 
@@ -675,6 +696,7 @@ def review_join_request_with_ai(
         raise HTTPException(status_code=404, detail="Join request not found")
 
     user = db.query(User).filter(User.id == join_request.user_id).first()
+
     community = db.query(Community).filter(
         Community.id == join_request.community_id
     ).first()
