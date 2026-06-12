@@ -5,6 +5,7 @@ function Navbar() {
   const navigate = useNavigate();
 
   const [token, setToken] = useState(localStorage.getItem("meetbridge_token"));
+
   const [user, setUser] = useState(
     JSON.parse(localStorage.getItem("meetbridge_user") || "null")
   );
@@ -41,11 +42,12 @@ function Navbar() {
         <Link to="/communities">Communities</Link>
         <Link to="/meetups">Meetups</Link>
 
-        {token && <Link to="/members">Members</Link>}
         {token && <Link to="/dashboard">Dashboard</Link>}
+        {token && <Link to="/members">Members</Link>}
         {token && <Link to="/messages">Messages</Link>}
-        {token && <Link to="/ai-chatbox">AI Assistant</Link>}
+        {token && <Link to="/ai-chatbox">AI Chatbox</Link>}
         {token && <Link to="/notifications">Notifications</Link>}
+        {token && <Link to="/set-password">Set Password</Link>}
 
         {user?.role === "admin" && <Link to="/admin">Admin</Link>}
 

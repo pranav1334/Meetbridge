@@ -12,7 +12,12 @@ from slowapi.util import get_remote_address
 
 from database import get_db
 from models import User
-from auth import hash_password, verify_password, create_access_token
+from auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    get_current_user,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -23,42 +28,31 @@ def clean_text(value):
     if value is None:
         return None
 
-    cleaned = bleach.clean(
+    return bleach.clean(
         str(value).strip(),
         tags=[],
         attributes={},
         strip=True
     )
 
-    return cleaned
-
 
 def validate_email(email: str):
     if not email:
-        raise HTTPException(
-            status_code=400,
-            detail="Email is required"
-        )
+        raise HTTPException(status_code=400, detail="Email is required")
 
     email = email.strip().lower()
 
     pattern = r"^[^\s@]+@[^\s@]+\.[^\s@]+$"
 
     if not re.match(pattern, email):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid email address"
-        )
+        raise HTTPException(status_code=400, detail="Invalid email address")
 
     return email
 
 
 def validate_password(password: str):
     if not password:
-        raise HTTPException(
-            status_code=400,
-            detail="Password is required"
-        )
+        raise HTTPException(status_code=400, detail="Password is required")
 
     if len(password) < 6:
         raise HTTPException(
@@ -67,10 +61,7 @@ def validate_password(password: str):
         )
 
     if len(password) > 72:
-        raise HTTPException(
-            status_code=400,
-            detail="Password is too long"
-        )
+        raise HTTPException(status_code=400, detail="Password is too long")
 
 
 def user_to_dict(user: User):
@@ -90,6 +81,7 @@ def user_to_dict(user: User):
         "looking_for": user.looking_for,
         "can_help_with": user.can_help_with,
         "auth_provider": user.auth_provider,
+        "has_password": True if user.password else False,
     }
 
 
@@ -113,15 +105,10 @@ def register_user(
     email = validate_email(email)
     validate_password(password)
 
-    existing_user = db.query(User).filter(
-        User.email == email
-    ).first()
+    existing_user = db.query(User).filter(User.email == email).first()
 
     if existing_user:
-        raise HTTPException(
-            status_code=400,
-            detail="Email already registered"
-        )
+        raise HTTPException(status_code=400, detail="Email already registered")
 
     admin_emails = os.getenv("ADMIN_EMAILS", "")
 
@@ -151,9 +138,7 @@ def register_user(
     db.commit()
     db.refresh(new_user)
 
-    token = create_access_token({
-        "sub": new_user.email
-    })
+    token = create_access_token({"sub": new_user.email})
 
     return {
         "message": "Registration successful",
@@ -173,44 +158,25 @@ def login_user(
     password = data.get("password")
 
     if not email or not password:
-        raise HTTPException(
-            status_code=400,
-            detail="Email and password are required"
-        )
+        raise HTTPException(status_code=400, detail="Email and password are required")
 
     email = validate_email(email)
 
-    user = db.query(User).filter(
-        User.email == email
-    ).first()
+    user = db.query(User).filter(User.email == email).first()
 
     if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password"
-        )
-
-    if user.auth_provider == "google" and not user.password:
-        raise HTTPException(
-            status_code=401,
-            detail="This account uses Google login"
-        )
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if not user.password:
         raise HTTPException(
             status_code=401,
-            detail="Password not set"
+            detail="This account uses Google login. Login with Google first and set a password from Set Password page."
         )
 
     if not verify_password(password, user.password):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password"
-        )
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    token = create_access_token({
-        "sub": user.email
-    })
+    token = create_access_token({"sub": user.email})
 
     return {
         "message": "Login successful",
@@ -229,25 +195,15 @@ def login_form(
     email = validate_email(form_data.username)
     password = form_data.password
 
-    user = db.query(User).filter(
-        User.email == email
-    ).first()
+    user = db.query(User).filter(User.email == email).first()
 
     if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password"
-        )
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if not user.password or not verify_password(password, user.password):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password"
-        )
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    token = create_access_token({
-        "sub": user.email
-    })
+    token = create_access_token({"sub": user.email})
 
     return {
         "access_token": token,
@@ -273,10 +229,7 @@ def google_login(
     credential_token = data.get("token")
 
     if not credential_token:
-        raise HTTPException(
-            status_code=400,
-            detail="Google token is required"
-        )
+        raise HTTPException(status_code=400, detail="Google token is required")
 
     try:
         idinfo = id_token.verify_oauth2_token(
@@ -286,16 +239,10 @@ def google_login(
         )
 
         email = validate_email(idinfo.get("email", ""))
-
-        full_name = clean_text(
-            idinfo.get("name", "Google User")
-        )
-
+        full_name = clean_text(idinfo.get("name", "Google User"))
         profile_picture = idinfo.get("picture")
 
-        user = db.query(User).filter(
-            User.email == email
-        ).first()
+        user = db.query(User).filter(User.email == email).first()
 
         admin_emails = os.getenv("ADMIN_EMAILS", "")
 
@@ -321,9 +268,7 @@ def google_login(
             db.commit()
             db.refresh(user)
 
-        token = create_access_token({
-            "sub": user.email
-        })
+        token = create_access_token({"sub": user.email})
 
         return {
             "message": "Google login successful",
@@ -335,7 +280,44 @@ def google_login(
         raise
 
     except Exception:
-        raise HTTPException(
-            status_code=401,
-            detail="Google login failed"
-        )
+        raise HTTPException(status_code=401, detail="Google login failed")
+
+
+@router.post("/set-password")
+@limiter.limit("5/minute")
+def set_password(
+    request: Request,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    current_password = data.get("current_password")
+    new_password = data.get("new_password")
+
+    validate_password(new_password)
+
+    if current_user.password:
+        if not current_password:
+            raise HTTPException(
+                status_code=400,
+                detail="Current password is required to change password"
+            )
+
+        if not verify_password(current_password, current_user.password):
+            raise HTTPException(
+                status_code=401,
+                detail="Current password is incorrect"
+            )
+
+    current_user.password = hash_password(new_password)
+
+    db.commit()
+    db.refresh(current_user)
+
+    token = create_access_token({"sub": current_user.email})
+
+    return {
+        "message": "Password set successfully. You can now login using email and password.",
+        "token": token,
+        "user": user_to_dict(current_user)
+    }
