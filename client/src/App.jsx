@@ -8,18 +8,13 @@ import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
-import SetPassword from "./pages/SetPassword";
-
 import Communities from "./pages/Communities";
 import CommunityDetails from "./pages/CommunityDetails";
-
 import Meetups from "./pages/Meetups";
 import MeetupDetails from "./pages/MeetupDetails";
-
 import AIAssistant from "./pages/AIAssistant";
 import AIFeatures from "./pages/AIFeatures";
 import AIChatBox from "./pages/AIChatBox";
-
 import Members from "./pages/Members";
 import MemberProfile from "./pages/MemberProfile";
 import Messages from "./pages/Messages";
@@ -52,24 +47,6 @@ function App() {
 
         <Route path="/meetups" element={<Meetups />} />
         <Route path="/meetups/:id" element={<MeetupDetails />} />
-
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/set-password"
-          element={
-            <ProtectedRoute>
-              <SetPassword />
-            </ProtectedRoute>
-          }
-        />
 
         <Route
           path="/members"
@@ -112,6 +89,15 @@ function App() {
           element={
             <ProtectedRoute>
               <Notifications />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
             </ProtectedRoute>
           }
         />
