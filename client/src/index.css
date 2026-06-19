@@ -2258,3 +2258,198 @@ img {
     grid-template-columns: 1fr;
   }
 }
+/* MINIMALIST FIXES AND OVERRIDES (DARK MODE) */
+
+/* General Body */
+body {
+  background: #000000 !important;
+  color: #ededed !important;
+}
+
+/* Remove decorative gradients */
+.hero-section::before, .hero-section::after {
+  display: none !important;
+}
+
+.auth-page, .admin-hero, .stats-section, .impact-section, .cta-section {
+  background: #000000 !important;
+  border: none !important;
+}
+
+/* Make inputs look clean */
+input, textarea, select {
+  background: #0a0a0a !important;
+  border: 1px solid #333 !important;
+  color: #ededed !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: #666 !important;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.1) !important;
+}
+
+/* Primary buttons */
+.primary-btn, .nav-btn, .step-number, .feature-icon, .admin-action-icon, .card-image, .user-message {
+  color: #000 !important;
+  background: #ededed !important;
+  border-radius: 8px !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.primary-btn:hover, .nav-btn:hover {
+  background: #ffffff !important;
+  transform: translateY(-2px) !important;
+}
+
+/* Secondary Buttons and Tabs */
+.secondary-btn, .chat-tabs button, .tab-buttons button {
+  background: #111 !important;
+  color: #ededed !important;
+  border: 1px solid #333 !important;
+  border-radius: 8px !important;
+}
+
+.secondary-btn:hover, .chat-tabs button:hover, .tab-buttons button:hover {
+  background: #222 !important;
+  color: #fff !important;
+  border-color: #555 !important;
+}
+
+.chat-tabs button.active, .tab-buttons button.active {
+  background: #ededed !important;
+  color: #000 !important;
+  border-color: #ededed !important;
+}
+
+/* Cards and Panels */
+.panel, .card, .stat-card, .ai-box, .auth-box, .hero-card, .workflow-card, .landing-feature-card, .audience-card, .meetup-card-new, .manage-community-card, .admin-hero-card, .admin-action-card, .admin-stat-card, .admin-insight-panel {
+  background: #0a0a0a !important;
+  border: 1px solid #222 !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+
+.card:hover, .workflow-card:hover, .landing-feature-card:hover, .audience-card:hover, .meetup-card-new:hover, .manage-community-card:hover {
+  border-color: #444 !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.8) !important;
+  transform: translateY(-2px) !important;
+}
+
+/* Remove all heavy gradients/box shadows */
+.hero-card, .ai-chatbox, .auth-box {
+  box-shadow: none !important;
+}
+
+/* Pills and Badges */
+.tags span, .meetup-meta-row span, .admin-meetup-meta span, .hero-badge, .section-heading span, .ai-chat-pill {
+  background: #111 !important;
+  color: #a1a1aa !important;
+  border: 1px solid #333 !important;
+  border-radius: 6px !important;
+}
+
+/* Alerts */
+.success {
+  background: rgba(22, 101, 52, 0.2) !important;
+  color: #86efac !important;
+  border: 1px solid rgba(34, 197, 94, 0.3) !important;
+}
+
+.error {
+  background: rgba(127, 29, 29, 0.2) !important;
+  color: #fca5a5 !important;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+}
+
+/* Typography Overrides */
+.page-subtitle, .section-heading p, .hero-content p {
+  color: #a1a1aa !important;
+}
+
+h1, h2, h3, h4, h5, h6, .page-title, .section-heading h2, .card h3 {
+  color: #ededed !important;
+  letter-spacing: -0.5px !important;
+}
+
+/* Specific elements */
+.hero-dashboard-preview > p {
+  background: #111 !important;
+  border: 1px solid #333 !important;
+  color: #ededed !important;
+}
+
+.ai-chat-messages {
+  background: #050505 !important;
+}
+
+.meetup-placeholder, .manage-meetup-placeholder {
+  background: #0a0a0a !important;
+}
+
+.meetup-placeholder span, .manage-meetup-placeholder span {
+  background: #111 !important;
+  color: #ededed !important;
+  border: 1px solid #333 !important;
+}
+
+/* Navbar */
+.navbar {
+  background: rgba(0, 0, 0, 0.8) !important;
+  border-bottom: 1px solid #222 !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+.logo {
+  color: #ededed !important;
+  letter-spacing: -1px !important;
+}
+
+.nav-links a {
+  color: #a1a1aa !important;
+  font-weight: 500 !important;
+}
+
+.nav-links a:hover {
+  color: #ededed !important;
+}
+
+/* Links and bot messages */
+.bot-message {
+  background: #111 !important;
+  color: #ededed !important;
+  border: 1px solid #222 !important;
+}
+
+.ai-chat-input {
+  background: #0a0a0a !important;
+  border-top: 1px solid #222 !important;
+}
+
+.landing-footer {
+  background: #050505 !important;
+  border-top: 1px solid #222 !important;
+}
+
+.landing-footer h3 {
+  color: #ededed !important;
+}
+
+.landing-footer p, .landing-footer a {
+  color: #a1a1aa !important;
+}
+
+/* Fix chat messages background */
+.chat-message, .message-card, .community-message {
+  background: #0a0a0a !important;
+  border: 1px solid #222 !important;
+  color: #ededed !important;
+}
+.chat-message strong, .message-card strong, .community-message strong {
+  color: #ededed !important;
+}
+.chat-message p, .message-card p, .community-message p {
+  color: #a1a1aa !important;
+}
